@@ -63,12 +63,9 @@ Saves (the Mega-CD's backup RAM) go to `backup_ram.bin` there. Uninstalling keep
 
 The opening animation is [LuanUP](https://www.youtube.com/@LuanUP)'s
 [4K 60 fps remaster](https://www.youtube.com/watch?v=O7ehCx2RC2A) of the Japanese opening, shown full screen (16:9)
-in place of the original FMV and credited on screen while it plays. It ships with the game, with LuanUP's permission.
+in place of the original FMV and credited on screen while it plays. It ships with the game. (Thanks, LuanUP!)
 
-The game's own FMV keeps running behind it (hidden and muted), so Start skips it, it plays again in the attract loop,
-and save states work as usual. The remaster is synced to the disc: its first frame lands on the frame the original
-shows its first picture, and both end on the planet at the same moment (90.5 s). Its sound is brought down to the
-level of the game's CD music. **Setup → Intro → Original** brings back the game's own opening. Playback uses a small
+**Setup → Intro → Original** brings back the game's own opening. Playback uses a small
 LGPL build of [FFmpeg](https://ffmpeg.org) that ships with the game.
 
 ### Extras
