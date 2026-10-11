@@ -64,18 +64,15 @@ void sparkle(int cx, int cy) {   // focus marker: a small red triangle pointing 
   float p[6] = {cx - 3.0f, cy - 3.5f, cx + 2.5f, (float)cy, cx - 3.0f, cy + 3.5f};
   vg_begin(); vg_poly(p, 3); vg_fill(0xffe4202a);
 }
-// the paper: a corner of the sun behind the logo, a little confetti, the black sawtooth band at the bottom
+// the paper: a corner of the sun behind the logo and a little confetti between it and the corner label
 void stars(void) {
   page();
   vg_begin(); vg_circle(34, 4, 40); vg_fill(0xffffdd00);
   float sq[2 * 25];
-  for (int i = 0; i < 25; i++) { float t = i / 24.0f; sq[i * 2] = cw - 70 + t * 34; sq[i * 2 + 1] = 12 + sinf(t * 2.5f * 6.2832f) * 3; }
+  for (int i = 0; i < 25; i++) { float t = i / 24.0f; sq[i * 2] = 196 + t * 30; sq[i * 2 + 1] = 13 + sinf(t * 2 * 6.2832f) * 3; }
+  vg_push(); vg_translate(1.2f, 1.2f); vg_begin(); vg_stroke(sq, 25, 1.6f, false); vg_fill(0xffe4202a); vg_pop();
   vg_begin(); vg_stroke(sq, 25, 1.6f, false); vg_fill(0xff000000);
-  vg_begin(); for (int i = 0; i < 4; i++) vg_rect(cw - 24.0f + i * 5, 22, 3, 3); vg_fill(0xff000000);
-  vg_begin();
-  vg_rect(0, ch - 4.0f, (float)cw, 4);
-  for (float x = 0; x < cw; x += 8) { float t[6] = {x, ch - 3.5f, x + 4, ch - 8.0f, x + 8, ch - 3.5f}; vg_poly(t, 3); }
-  vg_fill(0xff000000);
+  vg_begin(); for (int i = 0; i < 4; i++) vg_rect(cw - 24.0f + i * 5, 23, 3, 3); vg_fill(0xff000000);
 }
 // the wordmark on its tilted slab, red copy behind
 void logo(int x, int y) {
