@@ -92,6 +92,7 @@ bool app_load_state(const char *path) {
   fclose(f);
   if (ok) mcd_serialize(&s);
   free(s.buf);
+  intro_state_loaded();
   return ok && !s.fail;
 }
 

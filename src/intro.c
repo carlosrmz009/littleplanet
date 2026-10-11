@@ -23,6 +23,12 @@ static const char *files[] = { "intro.mkv", "intro.webm", "intro.mp4" };
 static u32 opn_lba, opn_end;
 static bool active, tried, opn_known;
 
+// New game: the game only shows its opening in the attract loop, so the remaster also plays, on its own,
+// whenever a game starts: when the drive begins reading the first stage straight after the title program.
+// The emulation waits until it ends or is skipped.
+static IsoFile progs[256]; static int nprogs, title_prog = -1, first_prog = -1, last_prog = -1;
+static bool holding, newgame_on;
+
 #ifdef _WIN32
 static void exe_dir(char *d, int n) {
   wchar_t w[MAX_PATH];
@@ -66,12 +72,38 @@ const char *intro_status(void) {
   return "LuanUP's 4K remaster (youtube.com/@LuanUP), full screen.";
 }
 
-void intro_reset(void) {
-  active = false;
+void intro_reset(bool newgame) {
+  active = holding = false;
+  newgame_on = newgame;
   if (!movie_is_open()) tried = false;
   opn_known = false;
   IsoFile f;
   if (iso_find("OPN.STM", &f)) { opn_lba = f.lba; opn_end = f.lba + (f.size + 2047) / 2048; opn_known = true; }
+  // the program files, to follow which one the drive is loading
+  static IsoFile all[256];
+  int n = iso_list(all, 256);
+  nprogs = 0; title_prog = first_prog = last_prog = -1;
+  for (int i = 0; i < n; i++) {
+    size_t l = strlen(all[i].name);
+    if (l < 4 || strcmp(all[i].name + l - 4, ".MMD")) continue;
+    if (!strcmp(all[i].name, "TITLEM.MMD")) title_prog = nprogs;
+    if (!strcmp(all[i].name, "R11A__.MMD")) first_prog = nprogs;
+    progs[nprogs++] = all[i];
+  }
+}
+
+static int prog_at(u32 lba) {
+  for (int i = 0; i < nprogs; i++)
+    if (lba >= progs[i].lba && lba < progs[i].lba + (progs[i].size + 2047) / 2048) return i;
+  return -1;
+}
+
+bool intro_holding(void) { return holding; }
+
+// a loaded state carries on from where it was: no new game to wait for, and no false one from the jump
+void intro_state_loaded(void) {
+  holding = active = false;
+  last_prog = drive.state == DRV_READ ? prog_at(drive.lba) : -1;
 }
 
 bool intro_active(void) { return active; }
@@ -92,8 +124,32 @@ static bool ensure_open(void) {
   return true;
 }
 
+// while a new game waits: the movie on its own clock; returns its sound for dt
+int intro_hold_step(double dt, bool skip, s16 *audio, int max) {
+  int n = movie_advance(dt, audio, max);
+  double t = movie_time();
+  for (int i = 0; i < n; i++) {
+    double ts = t - (double)(n - i) / MOVIE_RATE;
+    double g = ts >= MOVIE_END ? 0 : ts > MOVIE_END - FADE ? (MOVIE_END - ts) / FADE : 1;
+    if (g < 1) { audio[i * 2] = (s16)lrint(audio[i * 2] * g); audio[i * 2 + 1] = (s16)lrint(audio[i * 2 + 1] * g); }
+  }
+  if ((skip && t > 0) || t >= MOVIE_END + 0.25) holding = active = false;
+  return n;
+}
+
 bool intro_step(double dt, s16 *audio, int *frames, int max) {
   *frames = 0;
+  if (drive.state == DRV_READ) {
+    int p = prog_at(drive.lba);
+    if (p >= 0 && p != last_prog) {
+      if (p == first_prog && last_prog == title_prog && newgame_on && cfg.intro == INTRO_REMASTERED && ensure_open()) {
+        holding = active = true;
+        movie_seek(-0.4);
+      }
+      last_prog = p;
+      if (holding) return false;
+    }
+  }
   bool want = cfg.intro == INTRO_REMASTERED && opn_known;
   bool in_file = drive.lba >= opn_lba && drive.lba <= opn_end;
   double expect = ((double)drive.lba - opn_lba - LEAD_SECTORS) / 75.0;

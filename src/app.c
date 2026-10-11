@@ -253,8 +253,19 @@ static void screenshot(const u32 *pix, int w, int h) {
 static void run_frame(bool keep_audio) {
   static s16 tmp[8192], mv[8192];
   const double frame_time = (double)MCLK_PER_LINE * LINES_PER_FRAME / MCLK_HZ;
-  mcd_run_frame();
   int mn, n;
+  static bool swallow;     // the buttons that skipped it don't reach the game until they're let go
+  if (intro_holding()) {   // a new game waits while the remaster plays; Start or a button skips it
+    static u16 prev = 0xffff;
+    u16 pad = input_md_mask(), press = pad & ~prev & (PAD_START | PAD_A | PAD_B | PAD_C);
+    prev = pad;
+    mn = intro_hold_step(frame_time, press != 0, mv, 4096);
+    if (keep_audio) { audio_ring_add(mv, mn); audio_submit(); }
+    swallow = true;
+    return;
+  }
+  if (swallow) { if (input_md_mask()) io_set_pad(0, 0); else swallow = false; }
+  mcd_run_frame();
   bool intro = intro_step(frame_time, mv, &mn, 4096);
   while ((n = audio_fetch(tmp, 4096)) > 0) if (keep_audio && !intro) audio_ring_add(tmp, n);
   if (keep_audio && intro) audio_ring_add(mv, mn);
@@ -322,7 +333,7 @@ int app_run(const char *disc) {
           }
           bram_load("backup_ram.bin");
           if (apptest_prefix && apptest_state && !app_load_state(apptest_state)) { fprintf(stderr, "can't load %s\n", apptest_state); app_quit = true; continue; }
-          intro_reset();
+          intro_reset(!uitest_prefix && !apptest_prefix);
           if (apptest_prefix) {
             char p[512]; snprintf(p, sizeof p, "%s.wav", apptest_prefix);
             apptest_wav = fopen(p, "wb");

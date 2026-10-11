@@ -76,7 +76,10 @@ void osd_draw(double fps);
 void osd_caption(const char *s, float alpha, Rect r);   // bottom-right corner of r
 
 // remastered opening (intro.c)
-void intro_reset(void);
+void intro_reset(bool newgame);   // newgame: play the remaster before a new game too
+bool intro_holding(void);          // a new game waits for the remaster
+void intro_state_loaded(void);
+int intro_hold_step(double dt, bool skip, s16 *audio, int max);
 bool intro_step(double dt, s16 *audio, int *frames, int max);   // after each emulated frame
 bool intro_active(void);
 void intro_draw(Rect r);
