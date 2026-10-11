@@ -8,7 +8,6 @@ static int desk = 1, page;
 
 static int step(void) {
   logo(8, 2);
-  text_r(cw - 8, 10, f_small, C_DIM, "Little Planet");
   panel(8, 36, cw - 16, ch - 44, C_PANEL, C_EDGE);
   int y = ch - 30;
   if (page == 0) {

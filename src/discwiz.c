@@ -146,7 +146,6 @@ static int browse(void) {
 
 static int step(void) {
   logo(8, 2);
-  text_r(cw - 8, 10, f_small, C_DIM, "Sonic CD");
   panel(8, 36, cw - 16, ch - 44, C_PANEL, C_EDGE);
   tab(16, 30, "DISC");
   static const char *head[] = { "Pick your Sonic CD disc image.", "That's not Sonic CD.", "That's not a known Sonic CD release.",
