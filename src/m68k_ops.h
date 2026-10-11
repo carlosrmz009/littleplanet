@@ -18,7 +18,12 @@ static inline void ww(M68k *c, u32 a, u16 v) { c->w16(a & 0xfffffe, v); }
 static inline void wl(M68k *c, u32 a, u32 v) { ww(c, a, v >> 16); ww(c, a + 2, (u16)v); }
 static inline u32 rdm(M68k *c, u32 a, int sz) { return sz == 1 ? rb(c, a) : sz == 2 ? rw(c, a) : rl(c, a); }
 static inline void wrm(M68k *c, u32 a, int sz, u32 v) { if (sz == 1) wb(c, a, v); else if (sz == 2) ww(c, a, v); else wl(c, a, v); }
+#ifdef M68K_RECOMP
+// recompiled code: extension words are compiled in (the block was checked against memory before it ran)
+static inline u16 fw(M68k *c) { c->pc += 2; return *c->xw++; }
+#else
 static inline u16 fw(M68k *c) { u16 v = rw(c, c->pc); c->pc += 2; return v; }
+#endif
 static inline u32 fl(M68k *c) { u32 h = fw(c); return h << 16 | fw(c); }
 static inline void setd(M68k *c, int r, int sz, u32 v) { u32 m = SZMASK(sz); DR(r) = (DR(r) & ~m) | (v & m); }
 

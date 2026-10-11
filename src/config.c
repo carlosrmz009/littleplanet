@@ -22,12 +22,12 @@ void cfg_defaults(Settings *s) {
   memset(s, 0, sizeof *s);
   s->filter = FILT_SMOOTH; s->crt_mask = MASK_APERTURE; s->crt_curvature = 1; s->crt_scanlines = 70; s->crt_glow = 40;
   s->aspect = ASPECT_4_3; s->integer_scale = 0; s->fullscreen = 0; s->vsync = 1; s->show_fps = 0;
-  s->sound = SOUND_CLEAN; s->volume = 100; s->ff_speed = 4; s->fast_cd = 0; s->six_button = 0;
+  s->sound = SOUND_CLEAN; s->volume = 100; s->ff_speed = 4; s->six_button = 0;
   cfg_defaults_bindings(s);
 }
 
 #define FIELDS(X) X(filter) X(crt_mask) X(crt_curvature) X(crt_scanlines) X(crt_glow) X(aspect) X(integer_scale) \
-  X(fullscreen) X(vsync) X(show_fps) X(sound) X(volume) X(ff_speed) X(fast_cd) X(six_button) X(intro)
+  X(fullscreen) X(vsync) X(show_fps) X(sound) X(volume) X(ff_speed) X(six_button) X(intro)
 
 void cfg_load(const char *path) {
   cfg_defaults(&cfg);

@@ -4,7 +4,9 @@ Syntax is exactly what tools/disasm.py writes: explicit sizes and addressing mod
 so every line has one encoding and the output is byte-identical to the original file.
 
 usage: asm.py DATA_DIR OUT_DIR IR_DIR ASM_FILE [ASM_FILE ...]
-writes OUT_DIR/<file> and IR_DIR/<file>.json (code map for tools/recomp.py)
+       asm.py --code IR_DIR ASM_FILE [ASM_FILE ...]   (no disc needed: code only, data left as zeros)
+writes OUT_DIR/<file> and IR_DIR/<file>.json: per segment the CPU, the load address of offset 0 ("base")
+and every instruction as [file offset, [words]] (the input of tools/recomp.py)
 """
 import json, os, re, sys
 sys.path.insert(0, os.path.dirname(__file__))
@@ -208,7 +210,7 @@ def assemble(path, data_dir):
                 if t.startswith('.file'):
                     m = re.match(r'\.file\s+"([^"]+)",\s*(\d+)', t)
                     name, size = m.group(1), int(m.group(2))
-                    src = open(os.path.join(data_dir, name), 'rb').read()
+                    src = open(os.path.join(data_dir, name), 'rb').read() if data_dir else bytes(size)
                     if len(src) != size:
                         raise AsmError('data/%s is %d bytes, expected %d' % (name, len(src), size))
                     continue
@@ -236,7 +238,7 @@ def assemble(path, data_dir):
                 mn, size, ops = parse_insn(t, labels, addr, addr + 4)
                 words = isa68k.encode(mn, size, ops, addr)
                 if seg is not None and pass_no == 2:
-                    seg['code'].append(len(out))
+                    seg['code'].append([len(out), words])
                 for w in words:
                     out += bytes((w >> 8, w & 0xff))
                 addr += 2 * len(words)
@@ -246,6 +248,14 @@ def assemble(path, data_dir):
 
 
 def main():
+    if sys.argv[1] == '--code':
+        ir_dir = sys.argv[2]
+        os.makedirs(ir_dir, exist_ok=True)
+        for path in sys.argv[3:]:
+            name, out, ir = assemble(path, None)
+            json.dump(ir, open(os.path.join(ir_dir, name + '.json'), 'w'))
+        print('%d files' % (len(sys.argv) - 3))
+        return
     data_dir, out_dir, ir_dir = sys.argv[1:4]
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(ir_dir, exist_ok=True)

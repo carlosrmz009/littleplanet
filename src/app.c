@@ -320,6 +320,7 @@ int app_run(const char *disc) {
     if (uitest_prefix) { ff = ut_game_frames < 1320; paused = !ff && ut_step < 12; }
     int frames = 0;
     if (!paused) {
+      io_six_button = cfg.six_button;
       io_set_pad(0, uitest_prefix ? pv_pad(ut_game_frames) : input_md_mask());
       if (ff) {
         for (int i = 0; i < (uitest_prefix ? 20 : cfg.ff_speed); i++) {

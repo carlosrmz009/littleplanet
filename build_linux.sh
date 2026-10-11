@@ -86,7 +86,16 @@ for f in src/*.c src/sdl/*.c src/linux/*.c build/gen/*.c build/res.c third_party
   case "$f" in src/input.c|src/win32.c) ;; *) echo "$f" ;; esac
 done | xargs -P "$(nproc)" -I{} sh -c 'case "$1" in *.cpp) $CXX $CXXFLAGS -c "$1" -o "$OBJ/$(echo "$1" | tr / _).o" ;; *) $CC $CFLAGS -c "$1" -o "$OBJ/$(echo "$1" | tr / _).o" ;; esac' sh {}
 
-$CXX "$OBJ"/*.o $("$SDLCFG" --static-libs) $FTL -lGL -lm -ldl -lpthread -o build/littleplanet
+# the game's code, recompiled to C from asm/ (tools/recomp.py); regenerated and recompiled only when it changes
+$CC -O1 -DM68K_NAMES -Isrc tools/opmap.c -o build/opmap
+build/opmap > build/opmap.txt
+RC="$(python3 -I tools/recomp_gen.py build/opmap.txt)"
+mkdir -p "$RC/obj"
+for f in "$RC"/*.c; do [ -f "$RC/obj/$(basename "$f" .c).o" ] || echo "$f"; done |
+  xargs -P "$(nproc)" -I{} sh -c 'o="$1/obj/$(basename "$2" .c).o"; $CC -O2 -Isrc -I"$1" -c "$2" -o "$o.tmp" && mv "$o.tmp" "$o"' sh "$RC" {}
+$CC $CFLAGS -DLP_RECOMP -c src/recomp.c -o "$OBJ/src_recomp.c.o"
+
+$CXX "$OBJ"/*.o "$RC"/obj/*.o $("$SDLCFG" --static-libs) $FTL -lGL -lm -ldl -lpthread -o build/littleplanet
 
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/licenses/littleplanet"
 cp build/littleplanet "$APPDIR/usr/bin/littleplanet"

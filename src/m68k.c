@@ -21,7 +21,14 @@ static bool ea_ok(u16 op, int cls) {
   return bit & cls;
 }
 
+#ifdef M68K_NAMES
+static const char *names[65536];
+static void set_(u16 op, Handler h, const char *n) { if (!table[op]) { table[op] = h; names[op] = n; } }
+#define set(op, h) set_(op, h, #h)
+const char *m68k_op_name(u16 op) { m68k_init_tables(); return names[op]; }
+#else
 static void set(u16 op, Handler h) { if (!table[op]) table[op] = h; }
+#endif
 
 void m68k_init_tables(void) {
   static bool done;
@@ -101,7 +108,9 @@ void m68k_init_tables(void) {
     case 8: case 12: {
       int om = (op >> 6) & 7;
       if (om == 3 || om == 7) {
-        if (ea_ok(op, EA_DATA)) set(op, hi == 8 ? (om == 3 ? op_divu : op_divs) : (om == 3 ? op_mulu : op_muls));
+        if (!ea_ok(op, EA_DATA)) break;
+        if (hi == 8) { if (om == 3) set(op, op_divu); else set(op, op_divs); }
+        else { if (om == 3) set(op, op_mulu); else set(op, op_muls); }
         break;
       }
       if (om == 4 && m < 2) { set(op, op_abcd_sbcd); break; }
@@ -137,7 +146,7 @@ void m68k_init_tables(void) {
       break;
     case 15: set(op, op_linef); break;
     }
-    if (!table[op]) table[op] = op_illegal;
+    if (!table[op]) set(op, op_illegal);
   }
 }
 

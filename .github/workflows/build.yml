@@ -49,6 +49,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./tools/fetch_intro.sh
+      - name: recompiled code cache
+        uses: actions/cache@v4
+        with:
+          path: build/rc
+          key: rc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('asm/**', 'tools/asm.py', 'tools/isa68k.py', 'tools/recomp.py', 'tools/recomp_gen.py', 'tools/opmap.c', 'src/m68k.c', 'src/m68k.h', 'src/m68k_ops.h', 'src/recomp.h', 'src/mcd.h', 'src/types.h') }}
       - uses: ilammy/msvc-dev-cmd@v1
       - name: build
         shell: cmd
@@ -64,6 +69,7 @@ jobs:
           build\lp.exe --movie-check > build\movie.txt
           type build\movie.txt
           findstr /c:"ffmpeg ok" build\movie.txt || exit /b 1
+          build\lp.exe --rc-info || exit /b 1
           python -c "import os,sys; n=os.path.getsize('build/littleplanet.exe'); print('installer', n); sys.exit(n < 150000000)" || exit /b 1
           python -c "import os,sys; n=os.path.getsize('build/uninst.exe'); print('uninstaller', n); sys.exit(n > 5000000)" || exit /b 1
           build\lp.exe --frames 120 --hashlog build\h1.txt build\test.iso
@@ -119,6 +125,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./tools/fetch_intro.sh
+      - name: recompiled code cache
+        uses: actions/cache@v4
+        with:
+          path: build/rc
+          key: rc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('asm/**', 'tools/asm.py', 'tools/isa68k.py', 'tools/recomp.py', 'tools/recomp_gen.py', 'tools/opmap.c', 'src/m68k.c', 'src/m68k.h', 'src/m68k_ops.h', 'src/recomp.h', 'src/mcd.h', 'src/types.h') }}
       - name: build
         run: |
           ./build_mac.sh
@@ -130,6 +141,7 @@ jobs:
           bin="$app/Contents/MacOS/littleplanet"
           "$bin" --version
           "$bin" --movie-check
+          "$bin" --rc-info
           test -s "$app/Contents/Resources/intro.mkv"
           lipo -archs "$app/Contents/Frameworks/"libavcodec.*.dylib | grep -q x86_64
           lipo -archs "$bin" | grep -q arm64
@@ -255,6 +267,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./tools/fetch_intro.sh
+      - name: recompiled code cache
+        uses: actions/cache@v4
+        with:
+          path: build/rc
+          key: rc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('asm/**', 'tools/asm.py', 'tools/isa68k.py', 'tools/recomp.py', 'tools/recomp_gen.py', 'tools/opmap.c', 'src/m68k.c', 'src/m68k.h', 'src/m68k_ops.h', 'src/recomp.h', 'src/mcd.h', 'src/types.h') }}
       - name: appimagetool
         run: |
           mkdir -p build
@@ -279,6 +296,8 @@ jobs:
           objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
           APPIMAGE_EXTRACT_AND_RUN=1 "$ai" --version | grep -q "Little Planet"
           APPIMAGE_EXTRACT_AND_RUN=1 "$ai" --movie-check
+          "$bin" --rc-info
+          cc -Isrc tests/io_test.c src/io.c -o build/io_test && build/io_test
           ls build/AppDir/usr/lib
           test -s build/AppDir/usr/share/littleplanet/intro.mkv
           desktop-file-validate build/AppDir/littleplanet.desktop

@@ -18,8 +18,20 @@ Windows, macOS and Linux.
 * **Runtime.** Both 68000s, the Z80, VDP, YM2612, PSG, RF5C164 PCM, the CD drive and decoder, CD audio and the
   Mega-CD graphics ASIC, written from scratch (YM2612 via [ymfm](https://github.com/aaronsgiles/ymfm)). No BIOS
   needed: the boot ROM and sub-CPU BIOS are replaced by a high-level implementation of the calls the game makes.
+* **Decomp.** A disassembly of all the game's code that reassembles byte-identical to the disc, and a static
+  recompiler that turns it into C, which is what runs (checked frame by frame against the interpreter).
+* **Remastered opening.** [LuanUP](https://www.youtube.com/@LuanUP)'s 4K 60 fps remaster in place of the FMV,
+  synced to the game; the original is one setting away.
 * **Any disc image.** cue/bin (split or single), cue with wav/flac/ogg/mp3 audio, iso, ccd/img/sub and chd.
 * **Launcher.** CRT filters, aspect options, pad support, save states, same as [Project Arwing](https://github.com/carlosrmz009/project-arwing).
+
+<p align="center">
+<img src="res/screens/crt.png" width="400" alt="Palmtree Panic with the CRT filter">
+<img src="res/screens/game.png" width="400" alt="Stardust Speedway">
+<br>
+<img src="res/screens/intro.png" width="400" alt="The remastered opening">
+<img src="res/screens/menu.png" width="400" alt="The setup menu">
+</p>
 
 > [!IMPORTANT]
 > No game data is included. You need your own Sonic CD disc image. The Japanese release
@@ -78,7 +90,7 @@ The setup menu has a live preview. Esc, Home or Select+Start opens it in game.
 | Aspect | 4:3 (as on a TV), square pixels, 16:9 fill (blurred sides), 16:9 stretch |
 | Sound | Clean, or Accurate: adds the Model 1 Mega Drive's low-pass on FM and PSG (CD audio is never filtered) |
 | Intro | Remastered (LuanUP's 4K remaster, see above) or Original (the game's FMV) |
-| Controller | 3 button (default, what Sonic CD was made for) or 6 button |
+| Controller | 3 button (default, what Sonic CD was made for) or 6 button (the real 6-button protocol) |
 | Misc | Integer scaling, fullscreen, VSync, FPS counter, volume, fast-forward speed |
 
 ### Controls
@@ -119,6 +131,9 @@ tools/decomp.sh path/to/sonic.cue     # extract, reassemble asm/, compare with t
 only, seeded from runtime coverage (`--cov`) and followed by recursive descent. Graphics, sound and level data stay
 on your disc and are pulled in at build time. All 112 files reassemble byte-identical to the Japanese release.
 
+The build also recompiles `asm/` to C (no disc needed for that) and links it into the game.
+`tests/rc_check.sh path/to/sonic.cue` checks it against the interpreter over 96 stage runs.
+
 CI ([build.yml](.github/workflows/build.yml)) builds all four targets and tests them against a tiny homebrew
 test disc (`tools/mktestdisc.py`). Every push to `main` refreshes the release.
 
@@ -137,6 +152,8 @@ test disc (`tools/mktestdisc.py`). Every push to `main` refreshes the release.
 | `--uitest PREFIX` | scripted walk through the launcher and game, saving the real OpenGL output |
 | `--apptest PREFIX` | the app straight into the game (after `--state`), window screenshots at the `--shot` frames, the sound in `PREFIX.wav`, quits after `--frames` |
 | `--movie-check` | say whether FFmpeg (for the remastered opening) can be loaded |
+| `--interp` | run the game's code through the interpreter instead of the recompiled C |
+| `--rcstats` / `--rc-info` | how much ran recompiled and where the rest was / whether the recompiled code is built in |
 | `--version` | print the version |
 
 `tools/disctool` (built from `tools/disctool.c`) lists, hashes and extracts disc images.
@@ -154,6 +171,14 @@ test disc (`tools/mktestdisc.py`). Every push to `main` refreshes the release.
    transfer registers, so the game's own file engine runs unmodified.
 4. **Machine.** `src/mcd.c` schedules everything on the 53.69 MHz master clock: main 68000 at /7, Z80 at /15,
    the sub 68000 on its own 12.5 MHz clock, the VDP per line.
+5. **Recompiled code.** `tools/recomp.py` turns the code in `asm/` into C: each distinct instruction becomes a
+   function calling the interpreter's own handler for its opcode with the operands compiled in, and straight-line
+   runs become blocks (622k instructions in 112 files come down to 22,897 blocks, since the stages share their
+   engine). `src/recomp.c` runs a block where memory holds the code it was compiled from (each instruction checks
+   its own words, the ones the interpreter would fetch), and interprets anything else, such as the BIOS
+   stand-ins. Blocks stop where the interpreter would let something else happen (cycle budget, interrupts,
+   trace, exceptions), so the two produce the same machine state frame for frame: `tests/rc_check.sh` plays
+   96 stage runs both ways and compares every frame.
 
 ## Status
 
@@ -163,7 +188,7 @@ test disc (`tools/mktestdisc.py`). Every push to `main` refreshes the release.
 | CD audio, PCM music, FM/PSG | yes |
 | Save states | yes, bit-exact |
 | Disassembly, matching rebuild | yes: all 112 executable files reassemble byte-identical |
-| Static recompiler | in progress |
+| Static recompiler | yes: all game code runs as recompiled C, frame-identical to the interpreter |
 | Remastered opening (4K60, synced) | yes |
 
 ## Contributing
@@ -184,14 +209,15 @@ src/
   asic.c             Mega-CD graphics ASIC
   disc.c version.c   disc images, known releases
   movie.c intro.c    remastered opening: FFmpeg playback, synced to the CD drive
+  recomp.c           runs the recompiled game code (generated from asm/ at build time)
   app.c ui.c video.c config.c gfx.c discwiz.c update.c state.c
   win32.c input.c    Windows front end
   sdl/ mac/ linux/   SDL front end, platform installers
 installer/           Windows installer (littleplanet.exe)
 third_party/         libchdr, ymfm, dr_mp3, stb_vorbis
-tests/               CPU test-suite runners
+tests/               CPU test-suite runners, pad protocol test, recompiler check (stages/: input scripts)
 asm/                 disassembly of every executable file on the disc (code only; data comes from your disc)
-tools/               disctool, disassembler/assembler, test disc generator, FFmpeg build
+tools/               disctool, disassembler/assembler, recompiler, test disc generator, FFmpeg build
 ```
 
 ## Thanks

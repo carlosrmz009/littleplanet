@@ -23,7 +23,17 @@ for f in src/*.c src/sdl/*.c src/mac/*.c src/mac/*.m build/gen/*.c third_party/c
   case "$f" in src/input.c|src/win32.c) ;; *) echo "$f" ;; esac
 done | xargs -P "$(sysctl -n hw.ncpu)" -I{} sh -c 'case "$1" in *.m) clang $CFLAGS -fobjc-arc -c "$1" -o "$OBJ/$(echo "$1" | tr / _).o" ;; *.cpp) clang++ $CXXFLAGS -c "$1" -o "$OBJ/$(echo "$1" | tr / _).o" ;; *) clang $CFLAGS -c "$1" -o "$OBJ/$(echo "$1" | tr / _).o" ;; esac' sh {}
 
-clang++ $FLAGS "$OBJ"/*.o $("$SDLCFG" --static-libs) \
+# the game's code, recompiled to C from asm/ (tools/recomp.py); regenerated and recompiled only when it changes
+clang -O1 -DM68K_NAMES -Isrc tools/opmap.c -o build/opmap
+build/opmap > build/opmap.txt
+RC="$(python3 -I tools/recomp_gen.py build/opmap.txt)"
+mkdir -p "$RC/obj"
+export FLAGS
+for f in "$RC"/*.c; do [ -f "$RC/obj/$(basename "$f" .c).o" ] || echo "$f"; done |
+  xargs -P "$(sysctl -n hw.ncpu)" -I{} sh -c 'o="$1/obj/$(basename "$2" .c).o"; clang $FLAGS -Isrc -I"$1" -c "$2" -o "$o.tmp" && mv "$o.tmp" "$o"' sh "$RC" {}
+clang $CFLAGS -DLP_RECOMP -c src/recomp.c -o "$OBJ/src_recomp.c.o"
+
+clang++ $FLAGS "$OBJ"/*.o "$RC"/obj/*.o $("$SDLCFG" --static-libs) \
   -framework Cocoa -framework OpenGL -framework CoreText -framework CoreGraphics -framework CoreServices -o build/littleplanet
 
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/littleplanet.iconset

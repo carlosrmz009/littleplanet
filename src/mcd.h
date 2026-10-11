@@ -41,6 +41,8 @@ typedef struct {
   u8 sub_ipend;               // pending sub interrupt levels (bit n = level n)
   u8 z80_busreq, z80_reset;
   u8 io_data[3], io_ctrl[3];
+  u8 pad_th[2], pad_lows[2];  // 6-button pads: TH level, TH falling edges since the last pause
+  u64 pad_th_time[2];         // when TH last changed (MCLK)
   u8 tmss;
   // timing
   u64 mclk;                   // master clock at the start of the current slice

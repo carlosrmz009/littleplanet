@@ -386,8 +386,9 @@ static void run_sub_until(u64 t) {
     if (want > 64) want = 64;
     scpu.cyc = 0;
     if (!mcd.sub_reset || mcd.sub_busreq) scpu.cyc = want;
+    else if (!dbg_ring) m68k_exec(&scpu, want);
     else while (scpu.cyc < want) {
-      if (dbg_ring) {
+      {
         dbg_ring[dbg_pos++ & 4095] = scpu.pc;
         if (((scpu.pc & 1) || (scpu.pc >= 0x400 && scpu.pc < 0x5f00)) && !dbg_dumped) {
           dbg_dumped = true;
@@ -414,7 +415,7 @@ static void run_main_until(u64 t) {
     s64 step = left > 280 ? 280 : left;
     mcpu.cyc = 0;
     if (vdp.dma_stall) { mcpu.cyc += vdp.dma_stall; vdp.dma_stall = 0; }
-    while ((s64)mcpu.cyc * 7 < step) m68k_step(&mcpu);
+    m68k_exec(&mcpu, (s32)((step + 6) / 7));   // cyc * 7 < step, instruction by instruction
     main_mclk_done += (u64)mcpu.cyc * 7;
     mcpu.cyc = 0;
     run_sub_until(main_mclk_done);
@@ -443,9 +444,9 @@ static void cpu_ser(Ser *s, M68k *c) {
 }
 
 void mcd_serialize(Ser *s) {
-  u32 magic = 0x5350504c, version = 1;   // "LPPS"
+  u32 magic = 0x5350504c, version = 2;   // "LPPS"
   SER(s, magic); SER(s, version);
-  if (s->load && (magic != 0x5350504c || version != 1)) { s->fail = true; return; }
+  if (s->load && (magic != 0x5350504c || version != 2)) { s->fail = true; return; }
   SER(s, mcd);
   cpu_ser(s, &mcpu); cpu_ser(s, &scpu);
   SER(s, main_mclk_done); SER(s, timer_frac);

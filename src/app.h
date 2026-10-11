@@ -17,7 +17,7 @@ extern const char *bind_names[BIND_COUNT];
 typedef struct {
   int filter, crt_mask, crt_curvature, crt_scanlines, crt_glow;
   int aspect, integer_scale, fullscreen, vsync, show_fps;
-  int sound, volume, ff_speed, fast_cd, six_button, intro;
+  int sound, volume, ff_speed, six_button, intro;
   int key[BIND_COUNT];
   int pad[BIND_COUNT];
 } Settings;

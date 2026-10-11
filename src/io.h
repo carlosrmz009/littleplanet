@@ -9,3 +9,4 @@ void io_init(void);
 u8 io_read(u32 a);
 void io_write(u32 a, u8 v);
 void io_set_pad(int port, u16 buttons);
+extern bool io_six_button;   // pads answer the 6-button protocol (X, Y, Z, Mode)

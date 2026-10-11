@@ -10,6 +10,7 @@
 #include "state.h"
 #include "cov.h"
 #include "movie.h"
+#include "recomp.h"
 
 #define LP_VERSION "Little Planet 1.0"
 
@@ -104,11 +105,16 @@ const char *apptest_prefix, *apptest_state;
 int apptest_shots[256], apptest_nshots, apptest_frames;
 
 int main(int argc, char **argv) {
+  bool rcstats = false;
   const char *disc = NULL, *shot_prefix = "shot", *dump = NULL, *wav_path = NULL, *state_in = NULL, *state_out = NULL, *cov_path = NULL;
   FILE *hashlog = NULL;
   int frames = -1, shots[256], nshots = 0;
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "--version")) { puts(LP_VERSION); return 0; }
+    else if (!strcmp(argv[i], "--rc-info")) {   // is the recompiled code built in? (CI)
+      printf("%d recompiled blocks, %d entry points\n", rc_nblocks, rc_nentries);
+      return rc_nblocks ? 0 : 1;
+    }
     else if (!strcmp(argv[i], "--movie-check")) {   // can the remastered opening play? (CI checks the bundled FFmpeg)
       if (movie_available()) { puts("ffmpeg ok"); return 0; }
       printf("ffmpeg missing: %s\n", movie_error()); return 1;
@@ -125,6 +131,8 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--uitest") && i + 1 < argc) uitest_prefix = argv[++i];
     else if (!strcmp(argv[i], "--apptest") && i + 1 < argc) apptest_prefix = argv[++i];
     else if (!strcmp(argv[i], "--debug")) mcd_debug(true);
+    else if (!strcmp(argv[i], "--interp")) rc_on = false;   // interpreter only (to check the recompiled code against)
+    else if (!strcmp(argv[i], "--rcstats")) { rcstats = true; rc_miss = calloc(2, sizeof *rc_miss); }
     else if (!strcmp(argv[i], "--cov") && i + 1 < argc) cov_path = argv[++i];
     else if (!strncmp(argv[i], "-psn", 4)) {}
     else disc = argv[i];
@@ -191,5 +199,18 @@ int main(int argc, char **argv) {
   }
   if (hashlog) fclose(hashlog);
   printf("frames=%d main=%06x sub=%06x wordram=%s\n", frames, mcpu.pc, scpu.pc, mcd.mode1m ? "1M" : "2M");
+  if (rcstats)
+    for (int k = 0; k < 2; k++)
+      printf("%s: %llu recompiled blocks run, %llu instructions interpreted\n", k ? "sub" : "main",
+             (unsigned long long)rc_stats[k].blocks, (unsigned long long)rc_stats[k].insn_interp);
+  if (rcstats) {   // where the interpreted instructions were
+    for (int n = 0; n < 12; n++) {
+      int bk = 0, bi = 0; u32 bv = 0;
+      for (int k = 0; k < 2; k++) for (int i = 0; i < 0x100000; i++) if (rc_miss[k][i] > bv) { bv = rc_miss[k][i]; bk = k; bi = i; }
+      if (!bv) break;
+      printf("  %s %06x: %u\n", bk ? "sub" : "main", bi << 4, bv);
+      rc_miss[bk][bi] = 0;
+    }
+  }
   return 0;
 }
