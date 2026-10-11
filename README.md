@@ -73,6 +73,8 @@ Saves (the Mega-CD's backup RAM) go to `backup_ram.bin` there. Uninstalling keep
 
 ### Remastered opening
 
+<img width="2559" height="1439" alt="image" src="https://github.com/user-attachments/assets/25eb413e-2b12-408e-8da1-251c48192827" />
+
 The opening animation is [LuanUP](https://www.youtube.com/@LuanUP)'s
 [4K 60 fps remaster](https://www.youtube.com/watch?v=O7ehCx2RC2A) of the Japanese opening, shown full screen (16:9)
 in place of the original FMV and credited on screen while it plays. It ships with the game. (Thanks, LuanUP!)
