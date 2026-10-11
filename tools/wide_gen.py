@@ -11,8 +11,8 @@ line-A traps that ask the emulator where the edges are this frame:
   moveq #$15,d6              blocks in a row, minus one            -> $a803        d6 = (right - left) / 16
   move.w d3,d1 (add.w d0,d1) object's right side on screen?        -> $a804        d1 = d3 + left extra
   cmpi.w #$140,d1            object's left side on screen?         -> $a805, nop   cmp with 320 + right extra
-  move.w $8(a0),d3           x of a sprite placed on the screen    -> $a806, nop   kept in the middle 320
-                             (the HUD, title cards: they stay put while the extra pixels shift sides)
+  move.w $8(a0),d3           x of a sprite placed on the screen    -> $a806, nop   the HUD at the left edge,
+                             title cards and the rest in the middle (they stay put as the extra pixels shift)
 
 Each site is found by the instructions around it, and a file is only listed when all of them are found and
 the camera variables are where the code below expects them.

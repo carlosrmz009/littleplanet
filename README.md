@@ -92,9 +92,10 @@ LGPL build of [FFmpeg](https://ffmpeg.org) that ships with the game.
 Drive's pixel shape, like the 2011 version, without stretching anything. The game still plays on its own
 320-pixel screen; the stage engine is patched in a handful of places (the same ones in each of the 73 files
 that carry it, found by tools/wide_gen.py) to draw the level and show objects further out, and the picture
-reaches past either side of that screen, never past where the camera can go. The HUD and title cards stay in
-the middle. Objects at the sides count as on screen, so badniks there wake up a little earlier than on a TV.
-Menus, special stages and cutscenes stay 4:3. Switched on in the middle of an act, it starts at the next one.
+reaches past either side of that screen, never past where the camera can go. The HUD sits at the left edge,
+as in the 2011 version; title cards stay in the middle. Objects at the sides count as on screen, so badniks
+there wake up a little earlier than on a TV. Menus, special stages and cutscenes stay 4:3. Switched on in the
+middle of an act, it starts at the next one.
 
 ### Extras
 

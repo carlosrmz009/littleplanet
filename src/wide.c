@@ -10,10 +10,14 @@
 //
 // The extra pixels are split evenly, except near the camera's bounds: the picture never shows past
 // where the camera could go, so at the start of a level it all goes to the right. What the game places
-// on the screen rather than in the level (the HUD, title cards) stays in the middle 320 pixels.
+// on the screen rather than in the level stays put: the HUD (score, time, rings, lives) at the left edge
+// of the picture, as in the 2011 version, and the rest (title cards, the results) in the middle.
 #include "wide.h"
 #include "mcd.h"
 #include "vdp.h"
+
+#define OBJ_HUD 0x1c      // object types (byte 0 of an object, the same in every stage): score/time/rings, lives
+#define OBJ_HUD2 0x19     // (and the piece under the lives)
 
 static bool enabled;
 static int cur = -1;          // the stage file in Word RAM (wide_files index), -1 if none
@@ -105,9 +109,12 @@ int wide_trap(M68k *c, int id) {
     c->sr = (c->sr & ~0x1f) | ccr;
     return 1;
   }
-  case 6:                                                                          // move.w $8(a0),d3
-    c->r[3] = (c->r[3] & 0xffff0000) | (u16)(rd16(c->r[8] + 8) + WIDE_EXTRA / 2 - l);
+  case 6: {                                                                        // move.w $8(a0),d3
+    u8 obj = mcd.work_ram[c->r[8] & 0xffff];   // the object's type
+    int shift = obj == OBJ_HUD || obj == OBJ_HUD2 ? -l : WIDE_EXTRA / 2 - l;
+    c->r[3] = (c->r[3] & 0xffff0000) | (u16)(rd16(c->r[8] + 8) + shift);
     return 1;
+  }
   }
   return 0;
 }
