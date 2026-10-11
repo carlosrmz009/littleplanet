@@ -35,7 +35,7 @@ if [ -d "$FF/lib" ]; then
   cp "$FF"/lib/*.dylib "$APP/Contents/Frameworks/"
   cp "$FF"/licenses/* "$APP/Contents/Resources/licenses/"
 fi
-python3 -c "import struct,sys;d=open('res/littleplanet.ico','rb').read();e=max((struct.unpack('<BBBBHHII',d[6+16*i:22+16*i]) for i in range(struct.unpack('<H',d[4:6])[0])),key=lambda e:e[0] or 256);open(sys.argv[1],'wb').write(d[e[7]:e[7]+e[6]])" build/icon.png
+cp res/icon.png build/icon.png   # full-size square logo, so the Retina sizes aren't upscaled
 for s in 16 32 128 256 512; do
   sips -z $s $s build/icon.png --out "build/littleplanet.iconset/icon_${s}x${s}.png" >/dev/null
   sips -z $((s * 2)) $((s * 2)) build/icon.png --out "build/littleplanet.iconset/icon_${s}x${s}@2x.png" >/dev/null

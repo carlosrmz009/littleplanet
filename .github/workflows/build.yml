@@ -38,6 +38,15 @@ jobs:
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         shell: msys2 {0}
         run: ./tools/build_ffmpeg.sh build/ffmpeg
+      - id: intro-cache
+        uses: actions/cache@v4
+        with:
+          path: build/intro.mkv
+          key: intro-${{ hashFiles('tools/fetch_intro.sh') }}
+      - name: remastered opening
+        if: steps.intro-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: ./tools/fetch_intro.sh
       - uses: ilammy/msvc-dev-cmd@v1
       - name: build
         shell: cmd
@@ -53,6 +62,8 @@ jobs:
           build\lp.exe --movie-check > build\movie.txt
           type build\movie.txt
           findstr /c:"ffmpeg ok" build\movie.txt || exit /b 1
+          python -c "import os,sys; n=os.path.getsize('build/littleplanet.exe'); print('installer', n); sys.exit(n < 150000000)" || exit /b 1
+          python -c "import os,sys; n=os.path.getsize('build/uninst.exe'); print('uninstaller', n); sys.exit(n > 5000000)" || exit /b 1
           build\lp.exe --frames 120 --hashlog build\h1.txt build\test.iso
           build\lp.exe --frames 120 --hashlog build\h2.txt build\test.iso
           fc build\h1.txt build\h2.txt || exit /b 1
@@ -95,6 +106,15 @@ jobs:
         run: |
           brew install nasm
           ./tools/build_ffmpeg.sh build/ffmpeg
+      - id: intro-cache
+        uses: actions/cache@v4
+        with:
+          path: build/intro.mkv
+          key: intro-${{ hashFiles('tools/fetch_intro.sh') }}
+      - name: remastered opening
+        if: steps.intro-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: ./tools/fetch_intro.sh
       - name: build
         run: |
           ./build_mac.sh
@@ -106,6 +126,7 @@ jobs:
           bin="$app/Contents/MacOS/littleplanet"
           "$bin" --version
           "$bin" --movie-check
+          test -s "$app/Contents/Resources/intro.mkv"
           lipo -archs "$app/Contents/Frameworks/"libavcodec.*.dylib | grep -q x86_64
           lipo -archs "$bin" | grep -q arm64
           lipo -archs "$bin" | grep -q x86_64
@@ -219,6 +240,15 @@ jobs:
       - name: ffmpeg
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         run: ./tools/build_ffmpeg.sh build/ffmpeg
+      - id: intro-cache
+        uses: actions/cache@v4
+        with:
+          path: build/intro.mkv
+          key: intro-${{ hashFiles('tools/fetch_intro.sh') }}
+      - name: remastered opening
+        if: steps.intro-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: ./tools/fetch_intro.sh
       - name: appimagetool
         run: |
           mkdir -p build
@@ -244,6 +274,7 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN=1 "$ai" --version | grep -q "Little Planet"
           APPIMAGE_EXTRACT_AND_RUN=1 "$ai" --movie-check
           ls build/AppDir/usr/lib
+          test -s build/AppDir/usr/share/littleplanet/intro.mkv
           desktop-file-validate build/AppDir/littleplanet.desktop
           ls build/AppDir/usr/share/licenses/littleplanet
           timeout 120 "$bin" --frames 120 --hashlog build/h1.txt build/test.iso
