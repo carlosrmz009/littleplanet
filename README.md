@@ -22,6 +22,7 @@ Windows, macOS and Linux.
   recompiler that turns it into C, which is what runs (checked frame by frame against the interpreter).
 * **Remastered opening.** [LuanUP](https://www.youtube.com/@LuanUP)'s 4K 60 fps remaster in place of the FMV,
   synced to the game; the original is one setting away.
+* **True widescreen.** The stages drawn 16:9, showing more of the level instead of stretching it.
 * **Any disc image.** cue/bin (split or single), cue with wav/flac/ogg/mp3 audio, iso, ccd/img/sub and chd.
 * **Launcher.** Dressed like the 90s Japanese Sonic boxes. CRT filters, aspect options, pad support, save states.
 
@@ -83,6 +84,18 @@ Besides the title screen's attract loop, it also plays every time you start a ne
 **Setup → Intro → Original** brings back the game's own opening. Playback uses a small
 LGPL build of [FFmpeg](https://ffmpeg.org) that ships with the game.
 
+### Widescreen
+
+<img src="res/screens/wide.png" width="856" alt="Palmtree Panic in widescreen">
+
+**Setup → Aspect → 16:9 widescreen** draws the stages 428 pixels wide instead of 320: 16:9 with the Mega
+Drive's pixel shape, like the 2011 version, without stretching anything. The game still plays on its own
+320-pixel screen; the stage engine is patched in a handful of places (the same ones in each of the 73 files
+that carry it, found by tools/wide_gen.py) to draw the level and show objects further out, and the picture
+reaches past either side of that screen, never past where the camera can go. The HUD and title cards stay in
+the middle. Objects at the sides count as on screen, so badniks there wake up a little earlier than on a TV.
+Menus, special stages and cutscenes stay 4:3. Switched on in the middle of an act, it starts at the next one.
+
 ### Extras
 
 The setup menu has a live preview. Esc, Home or Select+Start opens it in game.
@@ -90,7 +103,7 @@ The setup menu has a live preview. Esc, Home or Select+Start opens it in game.
 | Option | |
 |---|---|
 | Filter | Sharp, Smooth, Scale4x, or CRT (grille/shadow/slot mask, scanlines, glow, curvature) |
-| Aspect | 4:3 (as on a TV), square pixels, 16:9 fill (blurred sides), 16:9 stretch |
+| Aspect | 4:3 (as on a TV), square pixels, 16:9 fill (blurred sides), 16:9 widescreen (see below) |
 | Sound | Clean, or Accurate: adds the Model 1 Mega Drive's low-pass on FM and PSG (CD audio is never filtered) |
 | Intro | Remastered (LuanUP's 4K remaster, see above) or Original (the game's FMV) |
 | Controller | 3 button (default, what Sonic CD was made for) or 6 button (the real 6-button protocol) |
@@ -212,6 +225,7 @@ src/
   asic.c             Mega-CD graphics ASIC
   disc.c version.c   disc images, known releases
   movie.c intro.c    remastered opening: FFmpeg playback, synced to the CD drive
+  wide.c             widescreen: the stage engine's patches, the picture's edges
   recomp.c           runs the recompiled game code (generated from asm/ at build time)
   app.c ui.c video.c config.c discwiz.c update.c state.c
   ui_art.c vg.c gfx.c launcher art, its vector renderer (text via stb_truetype), installer widgets
@@ -222,7 +236,8 @@ third_party/         libchdr, ymfm, dr_mp3, stb_vorbis, stb_truetype
 res/fonts/           the launcher's fonts (OFL)
 tests/               CPU test-suite runners, pad protocol test, recompiler check (stages/: input scripts)
 asm/                 disassembly of every executable file on the disc (code only; data comes from your disc)
-tools/               disctool, disassembler/assembler, recompiler, test disc generator, FFmpeg build
+tools/               disctool, disassembler/assembler, recompiler, widescreen patch finder, test disc generator,
+                     FFmpeg build
 ```
 
 ## Thanks

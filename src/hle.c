@@ -2,6 +2,7 @@
 // BIOS calls, the sub-CPU kernel (USERCALLs, level 2, _WAITVSYNC), _CDBIOS and _BURAM.
 #include "hle.h"
 #include "mcd.h"
+#include "wide.h"
 #include "cdc.h"
 #include "disc.h"
 #include "vdp.h"
@@ -133,6 +134,7 @@ static void report(const char *who, u32 pc) {
 int hle_main_trap(M68k *c) {
   u16 id = c->ir & 0xfff;
   c->cyc += 4;
+  if ((id & 0xf00) == 0x800) return wide_trap(c, id & 0xff);   // widescreen patches in the stage engine
   switch (id) {
   case T_VDPREGS: {
     u32 a = c->r[9];

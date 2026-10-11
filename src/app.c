@@ -4,6 +4,7 @@
 #include "hle.h"
 #include "disc.h"
 #include "cdc.h"
+#include "wide.h"
 #include <time.h>
 
 bool app_quit;
@@ -52,6 +53,7 @@ static void audio_drain(void) { s16 junk[8192]; while (audio_fetch(junk, 4096) >
 // ---------------------------------------------------------------- menu preview
 // Boots the game once in the background: the title screen and a moment of Palmtree Panic
 // become the two preview scenes, and a few seconds of title music the sound sample.
+#define PV_W 320   // the menu's previews: title and attract loop, never widescreen
 static u32 *pv[2]; static int pv_w[2];
 // stills of the two intros at the same moment, for the Intro setting: the game's FMV (emulated, cached)
 // and the remaster (decoded from the video at each launch)
@@ -70,27 +72,27 @@ static const char *PV_CACHE = "preview_cache.bin";
 const s16 *preview_clip(int accurate) { return pvclip[accurate ? 0 : 1]; }
 
 static void pv_alloc(void) {
-  for (int s = 0; s < 2; s++) { pv[s] = calloc(GAME_W * GAME_H, 4); pvclip[s] = calloc(PV_CLIP_FRAMES * 2, 2); }
-  pv_intro = calloc(GAME_W * GAME_H, 4); pv_rm = calloc(RM_W * RM_H, 4);
+  for (int s = 0; s < 2; s++) { pv[s] = calloc(PV_W * GAME_H, 4); pvclip[s] = calloc(PV_CLIP_FRAMES * 2, 2); }
+  pv_intro = calloc(PV_W * GAME_H, 4); pv_rm = calloc(RM_W * RM_H, 4);
 }
 static bool pv_load_cache(void) {
   FILE *f = fopen(PV_CACHE, "rb"); if (!f) return false;
   u32 magic = 0; bool ok = fread(&magic, 4, 1, f) == 1 && magic == 0x3250504c;
   for (int s = 0; s < 2 && ok; s++) {
-    ok = fread(&pv_w[s], 4, 1, f) == 1 && pv_w[s] > 0 && pv_w[s] <= GAME_W;
-    ok = ok && fread(pv[s], 4, GAME_W * GAME_H, f) == GAME_W * GAME_H;
+    ok = fread(&pv_w[s], 4, 1, f) == 1 && pv_w[s] > 0 && pv_w[s] <= PV_W;
+    ok = ok && fread(pv[s], 4, PV_W * GAME_H, f) == PV_W * GAME_H;
     ok = ok && fread(pvclip[s], 4, PV_CLIP_FRAMES, f) == PV_CLIP_FRAMES;
   }
-  ok = ok && fread(&pv_intro_w, 4, 1, f) == 1 && pv_intro_w > 0 && pv_intro_w <= GAME_W;
-  ok = ok && fread(pv_intro, 4, GAME_W * GAME_H, f) == GAME_W * GAME_H;
+  ok = ok && fread(&pv_intro_w, 4, 1, f) == 1 && pv_intro_w > 0 && pv_intro_w <= PV_W;
+  ok = ok && fread(pv_intro, 4, PV_W * GAME_H, f) == PV_W * GAME_H;
   fclose(f);
   return ok;
 }
 static void pv_save_cache(void) {
   FILE *f = fopen(PV_CACHE, "wb"); if (!f) return;
   u32 magic = 0x3250504c; fwrite(&magic, 4, 1, f);
-  for (int s = 0; s < 2; s++) { fwrite(&pv_w[s], 4, 1, f); fwrite(pv[s], 4, GAME_W * GAME_H, f); fwrite(pvclip[s], 4, PV_CLIP_FRAMES, f); }
-  fwrite(&pv_intro_w, 4, 1, f); fwrite(pv_intro, 4, GAME_W * GAME_H, f);
+  for (int s = 0; s < 2; s++) { fwrite(&pv_w[s], 4, 1, f); fwrite(pv[s], 4, PV_W * GAME_H, f); fwrite(pvclip[s], 4, PV_CLIP_FRAMES, f); }
+  fwrite(&pv_intro_w, 4, 1, f); fwrite(pv_intro, 4, PV_W * GAME_H, f);
   fclose(f);
 }
 static u16 pv_pad(int f) {
@@ -265,6 +267,7 @@ static void run_frame(bool keep_audio) {
     return;
   }
   if (swallow) { if (input_md_mask()) io_set_pad(0, 0); else swallow = false; }
+  wide_enable(cfg.aspect == ASPECT_WIDE);
   mcd_run_frame();
   bool intro = intro_step(frame_time, mv, &mn, 4096);
   while ((n = audio_fetch(tmp, 4096)) > 0) if (keep_audio && !intro) audio_ring_add(tmp, n);
@@ -298,7 +301,7 @@ int app_run(const char *disc) {
   const double frame_time = (double)MCLK_PER_LINE * LINES_PER_FRAME / MCLK_HZ;
   double next_frame = 0;
   static u32 pic[GAME_W * 240], big[GAME_W * 4 * 240 * 4];
-  int shown_w = GAME_W, shown_h = GAME_H;
+  int shown_w = 320, shown_h = GAME_H;
   bool ui_was_ready = false;
 
   while (!app_quit) {

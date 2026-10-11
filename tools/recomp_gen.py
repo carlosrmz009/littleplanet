@@ -8,7 +8,7 @@ import glob, hashlib, os, shutil, sys
 sys.path.insert(0, os.path.dirname(__file__))
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
-INPUTS = ['asm/*.s', 'tools/asm.py', 'tools/isa68k.py', 'tools/recomp.py', 'tools/recomp_gen.py', 'tools/opmap.c',
+INPUTS = ['asm/*.s', 'tools/asm.py', 'tools/isa68k.py', 'tools/recomp.py', 'tools/recomp_gen.py', 'tools/opmap.c', 'tools/wide_gen.py', 'src/wide.h',
           'src/m68k.c', 'src/m68k.h', 'src/m68k_ops.h', 'src/recomp.h', 'src/mcd.h', 'src/types.h']
 
 
@@ -23,18 +23,21 @@ def main():
     base = os.path.join(ROOT, 'build', 'rc')
     out = os.path.join(base, h.hexdigest()[:16])
     if not os.path.exists(os.path.join(out, 'rc_tables.c')):
-        import asm, recomp
+        import asm, recomp, wide_gen
         ir = os.path.join(base, 'ir.tmp')
         shutil.rmtree(ir, ignore_errors=True)
         os.makedirs(ir)
         import json
+        assembled = []
         for path in sorted(glob.glob(os.path.join(ROOT, 'asm', '*.s'))):
             name, _, segs = asm.assemble(path, None)
             json.dump(segs, open(os.path.join(ir, name + '.json'), 'w'))
+            assembled.append((name, segs))
         tmp = out + '.tmp'
         shutil.rmtree(tmp, ignore_errors=True)
         sys.argv = ['recomp.py', opmap, ir, tmp]
         recomp.main()
+        wide_gen.generate(assembled, os.path.join(tmp, 'wide_tab.c'))   # widescreen patch sites (src/wide.c)
         os.rename(tmp, out)
         shutil.rmtree(ir, ignore_errors=True)
     for d in glob.glob(os.path.join(base, '*')):   # older generations

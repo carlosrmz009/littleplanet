@@ -53,7 +53,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/rc
-          key: rc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('asm/**', 'tools/asm.py', 'tools/isa68k.py', 'tools/recomp.py', 'tools/recomp_gen.py', 'tools/opmap.c', 'src/m68k.c', 'src/m68k.h', 'src/m68k_ops.h', 'src/recomp.h', 'src/mcd.h', 'src/types.h') }}
+          key: rc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('asm/**', 'tools/asm.py', 'tools/isa68k.py', 'tools/recomp.py', 'tools/recomp_gen.py', 'tools/opmap.c', 'tools/wide_gen.py', 'src/wide.h', 'src/m68k.c', 'src/m68k.h', 'src/m68k_ops.h', 'src/recomp.h', 'src/mcd.h', 'src/types.h') }}
       - uses: ilammy/msvc-dev-cmd@v1
       - name: build
         shell: cmd
@@ -134,7 +134,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/rc
-          key: rc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('asm/**', 'tools/asm.py', 'tools/isa68k.py', 'tools/recomp.py', 'tools/recomp_gen.py', 'tools/opmap.c', 'src/m68k.c', 'src/m68k.h', 'src/m68k_ops.h', 'src/recomp.h', 'src/mcd.h', 'src/types.h') }}
+          key: rc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('asm/**', 'tools/asm.py', 'tools/isa68k.py', 'tools/recomp.py', 'tools/recomp_gen.py', 'tools/opmap.c', 'tools/wide_gen.py', 'src/wide.h', 'src/m68k.c', 'src/m68k.h', 'src/m68k_ops.h', 'src/recomp.h', 'src/mcd.h', 'src/types.h') }}
       - name: build
         run: |
           ./build_mac.sh
@@ -276,7 +276,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/rc
-          key: rc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('asm/**', 'tools/asm.py', 'tools/isa68k.py', 'tools/recomp.py', 'tools/recomp_gen.py', 'tools/opmap.c', 'src/m68k.c', 'src/m68k.h', 'src/m68k_ops.h', 'src/recomp.h', 'src/mcd.h', 'src/types.h') }}
+          key: rc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('asm/**', 'tools/asm.py', 'tools/isa68k.py', 'tools/recomp.py', 'tools/recomp_gen.py', 'tools/opmap.c', 'tools/wide_gen.py', 'src/wide.h', 'src/m68k.c', 'src/m68k.h', 'src/m68k_ops.h', 'src/recomp.h', 'src/mcd.h', 'src/types.h') }}
       - name: appimagetool
         run: |
           mkdir -p build

@@ -1,4 +1,5 @@
 #include "app.h"
+#include "wide.h"
 #include <math.h>
 #ifdef _WIN32
 #include <GL/gl.h>
@@ -206,12 +207,18 @@ static void quad(int x, int y, int w, int h, float u0, float v0, float u1, float
 
 void video_draw_game(const Settings *s, Rect r, float u0, float v0, float u1, float v1) {
   bool full_crop = u0 == 0 && v0 == 0 && u1 == 1 && v1 == 1;
-  int base_w = game_w % 320 == 0 ? 320 : 256;   // H40 or H32, possibly scaled up by Scale4x
-  double par = s->aspect == ASPECT_SQUARE ? (double)base_w / 224 : s->aspect == ASPECT_16_9_STRETCH ? 16.0 / 9 : 4.0 / 3;
-  if (!full_crop) par = (double)r.w / r.h;
-  int w = r.w, h = (int)(r.w / par);
-  if (h > r.h) { h = r.h; w = (int)(r.h * par); }
-  if (s->integer_scale && full_crop && h >= 224) { h = h / 224 * 224; w = (int)(h * par); }
+  int k = game_h >= 448 ? game_h / 224 : 1;       // Scale4x pictures are 4x
+  int pw = game_w / k;                              // in VDP pixels: 256 (H32), 320 (H40) or wider (widescreen)
+  double px = pw == 256 ? 7.0 / 6 : 14.0 / 15;      // a pixel's width / height, so that 256 or 320 make 4:3
+  bool wide = s->aspect == ASPECT_WIDE;
+  double par = s->aspect == ASPECT_SQUARE ? (double)pw / 224 : wide ? pw * px / 224 : 4.0 / 3;
+  // widescreen: sized for the 16:9 picture, so the 4:3 screens (menus, special stages) come out as tall
+  double fit = wide ? (320 + WIDE_EXTRA) * 14.0 / 15 / 224 : par;
+  if (!full_crop) par = fit = (double)r.w / r.h;
+  int w = r.w, h = (int)(r.w / fit);
+  if (h > r.h) h = r.h;
+  if (s->integer_scale && full_crop && h >= 224) h = h / 224 * 224;
+  w = (int)(h * par + 0.5);
   int x = r.x + (r.w - w) / 2, y = r.y + (r.h - h) / 2;
   glBindTexture(GL_TEXTURE_2D, tex_game);
   glColor4f(1, 1, 1, 1);

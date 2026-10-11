@@ -1,7 +1,7 @@
 #pragma once
 #include "types.h"
 
-#define VDP_MAX_W 320
+#define VDP_MAX_W 448      // 320, plus the widescreen pixels (wide.c)
 #define VDP_LINES 240
 
 typedef struct {
@@ -26,6 +26,7 @@ typedef struct {
 } Vdp;
 
 extern Vdp vdp;
+extern int vdp_exl, vdp_exr;    // widescreen: pixels drawn past the left and right of the screen this frame
 
 void vdp_reset(void);
 u16 vdp_read16(u32 a);

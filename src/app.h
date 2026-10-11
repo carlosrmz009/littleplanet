@@ -5,7 +5,7 @@
 
 enum { FILT_NEAREST, FILT_SMOOTH, FILT_PIXELART, FILT_CRT, FILT_COUNT };
 enum { MASK_APERTURE, MASK_SHADOW, MASK_SLOT, MASK_COUNT };
-enum { ASPECT_4_3, ASPECT_SQUARE, ASPECT_16_9_AMBIENT, ASPECT_16_9_STRETCH, ASPECT_COUNT };
+enum { ASPECT_4_3, ASPECT_SQUARE, ASPECT_16_9_AMBIENT, ASPECT_WIDE, ASPECT_COUNT };   // ASPECT_WIDE: true widescreen in the stages
 enum { SOUND_ACCURATE, SOUND_CLEAN };
 enum { INTRO_REMASTERED, INTRO_ORIGINAL };
 
@@ -62,7 +62,7 @@ int video_width(void), video_height(void);
 void scale_epx(const u32 *src, int w, int h, u32 *dst, int factor);
 
 // game picture: 320x224 (H40) or 256x224 (H32), XRGB
-#define GAME_W 320
+#define GAME_W 448   // widest picture: 320, or 428 in widescreen (wide.h)
 #define GAME_H 224
 int game_picture(u32 *dst, int *w, int *h);
 

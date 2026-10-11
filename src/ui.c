@@ -38,7 +38,7 @@ typedef struct {
 enum { A_START = 1, A_CONTROLS, A_RESET, A_QUIT, A_SAMPLE };
 static const char *filters[] = { "Sharp", "Smooth", "Scale4x", "CRT" };
 static const char *masks[] = { "Grille", "Shadow", "Slot" };
-static const char *aspects[] = { "4:3", "Square pixels", "16:9 fill", "16:9 stretch" };
+static const char *aspects[] = { "4:3", "Square pixels", "16:9 fill", "16:9 widescreen" };
 static const char *onoff[] = { "Off", "On" };
 static const char *audios[] = { "Accurate", "Clean" };
 static const char *pads[] = { "3 button", "6 button" };
@@ -54,7 +54,7 @@ static void build_items(bool in_game) {
   ADD("Scanlines", IT_SLIDER, &cfg.crt_scanlines, 0, 100, 10, NULL, "Scanline strength.", 0, 0);
   ADD("Glow", IT_SLIDER, &cfg.crt_glow, 0, 100, 10, NULL, "Bloom around bright stuff.", 0, 0);
   ADD("Curvature", IT_CHOICE, &cfg.crt_curvature, 0, 1, 1, onoff, "Curved glass, dark corners.", 0, 0);
-  ADD("Aspect", IT_CHOICE, &cfg.aspect, 0, ASPECT_COUNT - 1, 1, aspects, "4:3 is how it looked on a TV. 16:9 fill blurs the picture into the sides.", 1, 0);
+  ADD("Aspect", IT_CHOICE, &cfg.aspect, 0, ASPECT_COUNT - 1, 1, aspects, "4:3 is how it looked on a TV. 16:9 fill blurs the picture into the sides; 16:9 widescreen shows more of every stage, as in the 2011 version.", 1, 0);
   ADD("Integer scale", IT_CHOICE, &cfg.integer_scale, 0, 1, 1, onoff, "Even pixels. Might leave borders.", 0, 0);
   ADD("Sound", IT_CHOICE, &cfg.sound, 0, 1, 1, audios, "Accurate adds the Model 1's filter on FM and PSG. CD music is never filtered. Enter plays a sample.", -2, A_SAMPLE);
   ADD("Volume", IT_SLIDER, &cfg.volume, 0, 100, 10, NULL, "Volume.", -2, 0);

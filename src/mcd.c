@@ -8,6 +8,7 @@
 #include "io.h"
 #include "asic.h"
 #include "state.h"
+#include "wide.h"
 
 Mcd mcd;
 M68k mcpu, scpu;
@@ -250,7 +251,7 @@ static void sub_mem_mode_write(u8 v) {
     if (m1) mcd.dmna = 0;
   }
   if (!mcd.mode1m) {
-    if (v & 1) { mcd.ret = 1; mcd.dmna = 0; }   // return Word RAM to main
+    if (v & 1) { mcd.ret = 1; mcd.dmna = 0; wide_check(); }   // return Word RAM to main (maybe with a stage in it)
   } else {
     // 1M: RET selects the bank arrangement; a write completes any pending swap request
     mcd.ret = v & 1;
@@ -426,6 +427,8 @@ static void run_main_until(u64 t) {
 
 void mcd_run_frame(void) {
   vdp_frame_start();
+  wide_check();
+  wide_frame();
   for (int line = 0; line < LINES_PER_FRAME; line++) {
     mcd.line = line;
     u64 line_start = (mcd.frame * LINES_PER_FRAME + line) * (u64)MCLK_PER_LINE;

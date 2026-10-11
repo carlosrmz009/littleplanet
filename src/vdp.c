@@ -229,7 +229,8 @@ void vdp_frame_start(void) {
 
 // ---------------------------------------------------------------- rendering
 // line buffer entries: bits 0-5 color index, bit 6 priority, bit 7 opaque
-static u8 lb_a[320], lb_b[320], lb_s[320];
+static u8 lb_a[VDP_MAX_W], lb_b[VDP_MAX_W], lb_s[VDP_MAX_W];   // from vdp_exl pixels left of the screen
+int vdp_exl, vdp_exr;
 
 static inline u8 tile_px(u16 entry, int row, int col) {
   u16 tile = entry & 0x7ff;
@@ -261,14 +262,15 @@ static void render_plane(u8 *out, int line, bool plane_a, int win_from, int win_
   bool col_vs = R(11) & 4;
   u32 last_ea = 0xffffffff;
   u16 entry = 0;
-  for (int x = 0; x < w; x++) {
+  for (int x = -vdp_exl; x < w + vdp_exr; x++) {
     if (plane_a && x >= win_from && x < win_to) continue;
-    int vs = vdp.vsram[(col_vs ? (x >> 4) * 2 : 0) + (plane_a ? 0 : 1)];
+    int col = x < 0 ? 0 : x >= w ? (w >> 4) - 1 : x >> 4;   // (past the sides: the nearest column's)
+    int vs = vdp.vsram[(col_vs ? col * 2 : 0) + (plane_a ? 0 : 1)];
     int y = (line + vs) & (px_h - 1);
     int xp = (x - hscroll) & (px_w - 1);
     u32 ea = (nt + ((y >> 3) * cells_h + (xp >> 3)) * 2) & 0xffff;
     if (ea != last_ea) { entry = vdp.vram[ea] << 8 | vdp.vram[ea | 1]; last_ea = ea; }
-    out[x] = tile_px(entry, y & 7, xp & 7);
+    out[x + vdp_exl] = tile_px(entry, y & 7, xp & 7);
   }
 }
 
@@ -278,17 +280,18 @@ static void render_window(u8 *out, int line, int from, int to) {
   for (int x = from; x < to; x++) {
     u32 ea = (nt + ((line >> 3) * cells_h + (x >> 3)) * 2) & 0xffff;
     u16 entry = vdp.vram[ea] << 8 | vdp.vram[ea | 1];
-    out[x] = tile_px(entry, line & 7, x & 7);
+    out[x + vdp_exl] = tile_px(entry, line & 7, x & 7);
   }
 }
 
 static void render_sprites(u8 *out, int line) {
   int w = vdp.width;
-  int max_sprites = H40 ? 80 : 64, max_line = H40 ? 20 : 16, max_px = H40 ? 320 : 256;
+  int ext = vdp_exl + vdp_exr;   // widescreen: the per-line limits grow with the picture
+  int max_sprites = H40 ? 80 : 64, max_line = (H40 ? 20 : 16) * (w + ext) / w, max_px = (H40 ? 320 : 256) + ext;
   u16 sat = (R(5) & (H40 ? 0x7e : 0x7f)) << 9;
   int idx = 0, count = 0, px = 0;
   bool masked = false, nonzero_x = false;
-  memset(out, 0, w);
+  memset(out, 0, w + ext);
   for (int n = 0; n < max_sprites; n++) {
     u8 *c = &sat_cache[idx * 4];
     int y = ((c[0] << 8 | c[1]) & 0x3ff) - 128;
@@ -313,7 +316,9 @@ static void render_sprites(u8 *out, int line) {
         u16 te = (entry & 0xe800) | (((entry & 0x7ff) + col * vs + (row >> 3)) & 0x7ff);
         for (int i = 0; i < 8; i++) {
           int sxp = x + cx * 8 + i;
-          if (sxp < 0 || sxp >= w) continue;
+          if (sxp < -vdp_exl) sxp += 512;   // positions are 9 bits: past the right edge they wrap
+          if (sxp >= w + vdp_exr) continue;
+          sxp += vdp_exl;
           u8 p = tile_px(te, row & 7, i);
           if (!(p & 0x80)) continue;
           if (out[sxp] & 0x80) { sprite_collision = 1; continue; }
@@ -337,13 +342,13 @@ void vdp_line(int line) {
   } else vdp.hint_counter = R(10);
   if (line == vdp.active_lines) { vdp.vint_pending = true; z80_vint(); }
   if (line >= vdp.active_lines) return;
-  int w = vdp.width;
-  vdp.fb_width[line] = w;
+  int w = vdp.width, W = w + vdp_exl + vdp_exr;
+  vdp.fb_width[line] = W;
   u32 *dst = vdp.fb[line];
   u8 bgi = R(7) & 63;
   if (!DISPLAY_ON) {
     u32 c = pal_rgb[0][cram_index(vdp.cram[bgi])];
-    for (int x = 0; x < w; x++) dst[x] = c;
+    for (int x = 0; x < W; x++) dst[x] = c;
     return;
   }
   int win_from = 0, win_to = 0;
@@ -355,13 +360,13 @@ void vdp_line(int line) {
     if (edge > w) edge = w;
     if (R(17) & 0x80) { win_from = edge; win_to = w; } else win_to = edge;
   }
-  memset(lb_a, 0, w); memset(lb_b, 0, w);
+  memset(lb_a, 0, W); memset(lb_b, 0, W);
   render_plane(lb_b, line, false, 0, 0);
   render_plane(lb_a, line, true, win_from, win_to);
-  if (win_to > win_from) render_window(lb_a, line, win_from, win_to);
+  if (win_to > win_from) render_window(lb_a, line, win_from, win_to);   // (the window stays within the screen)
   render_sprites(lb_s, line);
   bool sh = SH_MODE;
-  for (int x = 0; x < w; x++) {
+  for (int x = 0; x < W; x++) {
     u8 a = lb_a[x], b = lb_b[x], s = lb_s[x];
     // planes alone, low to high: B low, A low, B high, A high
     u8 plane = bgi;

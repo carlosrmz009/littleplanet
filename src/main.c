@@ -9,6 +9,7 @@
 #include "cdc.h"
 #include "state.h"
 #include "cov.h"
+#include "wide.h"
 #include "movie.h"
 #include "recomp.h"
 
@@ -93,6 +94,8 @@ bool app_load_state(const char *path) {
   if (ok) mcd_serialize(&s);
   free(s.buf);
   intro_state_loaded();
+  wide_reset();
+  wide_check();
   return ok && !s.fail;
 }
 
@@ -132,6 +135,7 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--uitest") && i + 1 < argc) uitest_prefix = argv[++i];
     else if (!strcmp(argv[i], "--apptest") && i + 1 < argc) apptest_prefix = argv[++i];
     else if (!strcmp(argv[i], "--debug")) mcd_debug(true);
+    else if (!strcmp(argv[i], "--wide")) wide_enable(true);   // widescreen in the stages (wide.c)
     else if (!strcmp(argv[i], "--interp")) rc_on = false;   // interpreter only (to check the recompiled code against)
     else if (!strcmp(argv[i], "--rcstats")) { rcstats = true; rc_miss = calloc(2, sizeof *rc_miss); }
     else if (!strcmp(argv[i], "--cov") && i + 1 < argc) cov_path = argv[++i];
