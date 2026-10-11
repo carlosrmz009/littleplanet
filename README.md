@@ -23,7 +23,7 @@ Windows, macOS and Linux.
 * **Remastered opening.** [LuanUP](https://www.youtube.com/@LuanUP)'s 4K 60 fps remaster in place of the FMV,
   synced to the game; the original is one setting away.
 * **Any disc image.** cue/bin (split or single), cue with wav/flac/ogg/mp3 audio, iso, ccd/img/sub and chd.
-* **Launcher.** CRT filters, aspect options, pad support, save states, same as [Project Arwing](https://github.com/carlosrmz009/project-arwing).
+* **Launcher.** Dressed like the 90s Japanese Sonic boxes. CRT filters, aspect options, pad support, save states.
 
 <p align="center">
 <img src="res/screens/crt.png" width="400" alt="Palmtree Panic with the CRT filter">
@@ -112,7 +112,7 @@ Remap anything under *Controls*. Xbox pads, DualShock 4 / DualSense, Switch Pro 
 
 **Windows:** Python 3.10+, Visual Studio 2022 Build Tools (MSVC x64).
 **macOS:** Python 3, Xcode command line tools, SDL2.
-**Linux:** Python 3, gcc/g++, SDL2, FreeType, DejaVu fonts. Packaging the AppImage also needs `appimagetool`.
+**Linux:** Python 3, gcc/g++, SDL2. Packaging the AppImage also needs `appimagetool`.
 
 For the remastered opening, build FFmpeg once with `tools/build_ffmpeg.sh build/ffmpeg` (needs nasm; on Windows run it
 from an MSYS2 MINGW64 shell) and fetch the video with `tools/fetch_intro.sh`. The build scripts pick both up from
@@ -212,11 +212,13 @@ src/
   disc.c version.c   disc images, known releases
   movie.c intro.c    remastered opening: FFmpeg playback, synced to the CD drive
   recomp.c           runs the recompiled game code (generated from asm/ at build time)
-  app.c ui.c video.c config.c gfx.c discwiz.c update.c state.c
+  app.c ui.c video.c config.c discwiz.c update.c state.c
+  ui_art.c vg.c gfx.c launcher art, its vector renderer (text via stb_truetype), installer widgets
   win32.c input.c    Windows front end
   sdl/ mac/ linux/   SDL front end, platform installers
 installer/           Windows installer (littleplanet.exe)
-third_party/         libchdr, ymfm, dr_mp3, stb_vorbis
+third_party/         libchdr, ymfm, dr_mp3, stb_vorbis, stb_truetype
+res/fonts/           the launcher's fonts (OFL)
 tests/               CPU test-suite runners, pad protocol test, recompiler check (stages/: input scripts)
 asm/                 disassembly of every executable file on the disc (code only; data comes from your disc)
 tools/               disctool, disassembler/assembler, recompiler, test disc generator, FFmpeg build
@@ -227,7 +229,9 @@ tools/               disctool, disassembler/assembler, recompiler, test disc gen
 * Sega and Sonic Team for Sonic CD.
 * [ymfm](https://github.com/aaronsgiles/ymfm), [libchdr](https://github.com/rtissera/libchdr),
   [dr_libs](https://github.com/mackron/dr_libs), [stb](https://github.com/nothings/stb),
-  [SDL2](https://www.libsdl.org/), [FreeType](https://freetype.org/), [DejaVu](https://dejavu-fonts.github.io/).
+  [SDL2](https://www.libsdl.org/).
+* [Archivo](https://github.com/Omnibus-Type/Archivo) and [Dela Gothic One](https://github.com/syakuzen/DelaGothic)
+  (SIL Open Font License), the launcher's type.
 * [SingleStepTests](https://github.com/SingleStepTests) for the CPU test suites.
 * [LuanUP](https://www.youtube.com/@LuanUP) for the remastered opening.
 * [FFmpeg](https://ffmpeg.org) (LGPL 2.1), which plays it.

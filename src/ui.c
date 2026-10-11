@@ -107,7 +107,8 @@ static float sel_anim = -1; static double anim_t;
 static float slide(float target) {   // the selection slab slides to the new row
   double t = plat_time(), dt = anim_t ? t - anim_t : 0;
   anim_t = t;
-  if (sel_anim < 0 || fabsf(sel_anim - target) > 6) sel_anim = target;
+  extern const char *uitest_prefix;
+  if (sel_anim < 0 || fabsf(sel_anim - target) > 6 || uitest_prefix) sel_anim = target;   // tests: no motion
   float k = (float)(dt * 22); if (k > 1) k = 1;
   sel_anim += (target - sel_anim) * k;
   if (fabsf(sel_anim - target) < 0.01f) sel_anim = target;
