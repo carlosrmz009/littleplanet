@@ -147,10 +147,10 @@ static void sticker(void) {
   vg_pop();
 }
 
-// in game: a red slab over the monitor's corner
+// in game: a red slab resting on the monitor's corner (on the frame: the game picture is drawn over the art)
 static void paused_tag(void) {
   vg_push();
-  vg_translate(668, 168); vg_rotate(-4);
+  vg_translate(668, 142); vg_rotate(-4);
   float tw = vg_text_w(VF_SLAB, 26, "PAUSED"), kw = vg_text_w(VF_KANA, 18, "ポーズ");
   slab(-6, 0, tw + kw + 40, 38, 6, A_RED);
   atext(VF_SLAB, 26, 10, 29, A_PAPER, "PAUSED");

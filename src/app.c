@@ -5,6 +5,7 @@
 #include "disc.h"
 #include "cdc.h"
 #include "wide.h"
+#include "vdp.h"
 #include <time.h>
 
 bool app_quit;
@@ -53,8 +54,8 @@ static void audio_drain(void) { s16 junk[8192]; while (audio_fetch(junk, 4096) >
 // ---------------------------------------------------------------- menu preview
 // Boots the game once in the background: the title screen and a moment of Palmtree Panic
 // become the two preview scenes, and a few seconds of title music the sound sample.
-#define PV_W 320   // the menu's previews: title and attract loop, never widescreen
-static u32 *pv[2]; static int pv_w[2];
+#define PV_W 320   // the menu's previews at 4:3; the stage is also kept True16:9 (pvw)
+static u32 *pv[2], *pvw[2]; static int pv_w[2], pvw_w[2], pvw_exl[2];
 // stills of the two intros at the same moment, for the Intro setting: the game's FMV (emulated, cached)
 // and the remaster (decoded from the video at each launch)
 #define PV_INTRO_FRAME 1439   // 1 s after the FMV's first picture, booting with no input (the attract loop)
@@ -72,15 +73,17 @@ static const char *PV_CACHE = "preview_cache.bin";
 const s16 *preview_clip(int accurate) { return pvclip[accurate ? 0 : 1]; }
 
 static void pv_alloc(void) {
-  for (int s = 0; s < 2; s++) { pv[s] = calloc(PV_W * GAME_H, 4); pvclip[s] = calloc(PV_CLIP_FRAMES * 2, 2); }
+  for (int s = 0; s < 2; s++) { pv[s] = calloc(PV_W * GAME_H, 4); pvw[s] = calloc(GAME_W * GAME_H, 4); pvclip[s] = calloc(PV_CLIP_FRAMES * 2, 2); }
   pv_intro = calloc(PV_W * GAME_H, 4); pv_rm = calloc(RM_W * RM_H, 4);
 }
 static bool pv_load_cache(void) {
   FILE *f = fopen(PV_CACHE, "rb"); if (!f) return false;
-  u32 magic = 0; bool ok = fread(&magic, 4, 1, f) == 1 && magic == 0x3250504c;
+  u32 magic = 0; bool ok = fread(&magic, 4, 1, f) == 1 && magic == 0x3350504c;
   for (int s = 0; s < 2 && ok; s++) {
     ok = fread(&pv_w[s], 4, 1, f) == 1 && pv_w[s] > 0 && pv_w[s] <= PV_W;
     ok = ok && fread(pv[s], 4, PV_W * GAME_H, f) == PV_W * GAME_H;
+    ok = ok && fread(&pvw_w[s], 4, 1, f) == 1 && fread(&pvw_exl[s], 4, 1, f) == 1 && pvw_w[s] >= 0 && pvw_w[s] <= GAME_W;
+    ok = ok && fread(pvw[s], 4, GAME_W * GAME_H, f) == GAME_W * GAME_H;
     ok = ok && fread(pvclip[s], 4, PV_CLIP_FRAMES, f) == PV_CLIP_FRAMES;
   }
   ok = ok && fread(&pv_intro_w, 4, 1, f) == 1 && pv_intro_w > 0 && pv_intro_w <= PV_W;
@@ -90,8 +93,12 @@ static bool pv_load_cache(void) {
 }
 static void pv_save_cache(void) {
   FILE *f = fopen(PV_CACHE, "wb"); if (!f) return;
-  u32 magic = 0x3250504c; fwrite(&magic, 4, 1, f);
-  for (int s = 0; s < 2; s++) { fwrite(&pv_w[s], 4, 1, f); fwrite(pv[s], 4, PV_W * GAME_H, f); fwrite(pvclip[s], 4, PV_CLIP_FRAMES, f); }
+  u32 magic = 0x3350504c; fwrite(&magic, 4, 1, f);
+  for (int s = 0; s < 2; s++) {
+    fwrite(&pv_w[s], 4, 1, f); fwrite(pv[s], 4, PV_W * GAME_H, f);
+    fwrite(&pvw_w[s], 4, 1, f); fwrite(&pvw_exl[s], 4, 1, f); fwrite(pvw[s], 4, GAME_W * GAME_H, f);
+    fwrite(pvclip[s], 4, PV_CLIP_FRAMES, f);
+  }
   fwrite(&pv_intro_w, 4, 1, f); fwrite(pv_intro, 4, PV_W * GAME_H, f);
   fclose(f);
 }
@@ -110,6 +117,7 @@ static int pv_thread(void *arg) {
   static s16 tmp[8192];
   int n[2] = {0, 0};
   static u32 pic[GAME_W * 240];
+  wide_enable(true);   // the stage as True16:9; the 4:3 preview is its middle (the game's own screen)
   for (int f = 0; f <= pv_frame[1]; f++) {
     io_set_pad(0, pv_pad(f));
     mcd_run_frame();
@@ -122,10 +130,14 @@ static int pv_thread(void *arg) {
       if (f == pv_frame[s]) {
         int w, h;
         game_picture(pic, &w, &h);
-        pv_w[s] = w;
-        memcpy(pv[s], pic, (size_t)w * GAME_H * 4);
+        pvw_w[s] = w > PV_W ? w : 0; pvw_exl[s] = vdp_exl;
+        if (pvw_w[s]) memcpy(pvw[s], pic, (size_t)w * GAME_H * 4);
+        int x0 = w > PV_W ? vdp_exl : 0;
+        pv_w[s] = w > PV_W ? PV_W : w;
+        for (int y = 0; y < GAME_H; y++) memcpy(pv[s] + y * pv_w[s], pic + y * w + x0, (size_t)pv_w[s] * 4);
       }
   }
+  wide_enable(false);
   audio_dual = false;
   audio_lowpass = was;
   // again with no input: the attract loop reaches the opening FMV
@@ -189,14 +201,14 @@ static void ut_capture(void) {
 static bool ut_menu(void) {
   if (ut_name[0] || !preview_ready) return false;
   switch (ut_step) {
-  case 0: cfg.filter = FILT_SMOOTH; cfg.aspect = ASPECT_4_3; ui_debug_set(1, 0); strcpy(ut_name, "01_filter_smooth"); break;
+  case 0: cfg.filter = FILT_SMOOTH; cfg.screen = ASPECT_4_3; ui_debug_set(1, 0); strcpy(ut_name, "01_filter_smooth"); break;
   case 1: cfg.filter = FILT_CRT; ui_debug_set(2, 0); strcpy(ut_name, "02_crt_aperture"); break;
   case 2: cfg.crt_mask = MASK_SHADOW; strcpy(ut_name, "03_crt_shadow"); break;
   case 3: cfg.crt_mask = MASK_APERTURE; cfg.filter = FILT_PIXELART; ui_debug_set(1, 0); strcpy(ut_name, "04_pixelart"); break;
   case 4: cfg.filter = FILT_NEAREST; ui_debug_set(1, 0); strcpy(ut_name, "05_sharp"); break;
-  case 5: cfg.filter = FILT_SMOOTH; cfg.aspect = ASPECT_SQUARE; ui_debug_set(6, 0); strcpy(ut_name, "06_aspect_square"); break;
-  case 6: cfg.aspect = ASPECT_16_9_AMBIENT; ui_debug_set(6, 0); strcpy(ut_name, "07_aspect_ambient"); break;
-  case 7: cfg.aspect = ASPECT_4_3; ui_debug_set(0, 1); strcpy(ut_name, "08_controls"); break;
+  case 5: cfg.filter = FILT_SMOOTH; cfg.screen = ASPECT_WIDE; ui_debug_set(6, 0); strcpy(ut_name, "06_aspect_true169"); break;
+  case 6: cfg.screen = ASPECT_16_9_AMBIENT; ui_debug_set(6, 0); strcpy(ut_name, "07_aspect_ambient"); break;
+  case 7: cfg.screen = ASPECT_4_3; ui_debug_set(0, 1); strcpy(ut_name, "08_controls"); break;
   case 8: ui_debug_set(0, 0); cfg.filter = FILT_CRT; return true;
   }
   return false;
@@ -207,8 +219,8 @@ static void ut_game(void) {
   switch (ut_step) {
   case 8: strcpy(ut_name, "09_game_crt"); break;
   case 9: cfg.filter = FILT_SMOOTH; strcpy(ut_name, "10_game_smooth"); break;
-  case 10: cfg.aspect = ASPECT_16_9_AMBIENT; strcpy(ut_name, "11_game_ambient"); break;
-  case 11: cfg.aspect = ASPECT_4_3; cfg.filter = FILT_NEAREST; strcpy(ut_name, "12_game_sharp"); break;
+  case 10: cfg.screen = ASPECT_16_9_AMBIENT; strcpy(ut_name, "11_game_ambient"); break;
+  case 11: cfg.screen = ASPECT_4_3; cfg.filter = FILT_NEAREST; strcpy(ut_name, "12_game_sharp"); break;
   case 12: {
     static u32 t0; static int f0;
     if (!t0) { t0 = GetTickCount(); f0 = ut_game_frames; }
@@ -267,7 +279,7 @@ static void run_frame(bool keep_audio) {
     return;
   }
   if (swallow) { if (input_md_mask()) io_set_pad(0, 0); else swallow = false; }
-  wide_enable(cfg.aspect == ASPECT_WIDE);
+  wide_enable(cfg.screen == ASPECT_WIDE);
   mcd_run_frame();
   bool intro = intro_step(frame_time, mv, &mn, 4096);
   while ((n = audio_fetch(tmp, 4096)) > 0) if (keep_audio && !intro) audio_ring_add(tmp, n);
@@ -295,7 +307,8 @@ int app_run(const char *disc) {
 
   enum { M_MENU, M_GAME } mode = M_MENU;
   bool in_game = false, paused = false;
-  bool k_save = 0, k_load = 0, k_menu = 0, k_slot = 0, k_pause = 0, k_shot = 0, k_fs = 0;
+  bool k_save = 0, k_load = 0, k_menu = 0, k_slot = 0, k_pause = 0, k_shot = 0, k_fs = 0, k_start = 0;
+  bool start_held = false;   // Start opened or closed the menu: the game doesn't see it until it's let go
   double t0 = plat_time(), now;
   double fps = 0; int fps_frames = 0; double fps_t = t0;
   const double frame_time = (double)MCLK_PER_LINE * LINES_PER_FRAME / MCLK_HZ;
@@ -310,6 +323,8 @@ int app_run(const char *disc) {
     if (!ui_was_ready && preview_ready) {
       const u32 *a[2] = {pv[0], pv[1]};
       ui_set_preview_frames(a, pv_w, pvclip[0], PV_CLIP_FRAMES);
+      const u32 *aw[2] = {pvw[0], pvw[1]};
+      ui_set_preview_wide(aw, pvw_w, pvw_exl);
       ui_set_intro_still(0, pv_intro, pv_intro_w, GAME_H);
       ui_was_ready = true;
     }
@@ -348,7 +363,7 @@ int app_run(const char *disc) {
         cfg_save("littleplanet.ini");
         audio_stop_clip();
         mode = M_GAME; paused = false; input_flush_edges();
-        k_menu = true;
+        k_menu = true; k_start = start_held = true;
         t0 = plat_time(); next_frame = 0;
       }
       continue;
@@ -356,6 +371,15 @@ int app_run(const char *disc) {
 
     bool b;
     b = input_bind_down(BIND_MENU); if (b && !k_menu) { mode = M_MENU; ui_init(); input_flush_edges(); k_menu = b; bram_flush(); continue; } k_menu = b;
+    // Start in a stage opens this menu instead of the game's own pause, as in the 2011 version; everywhere
+    // else (title, the game's menus, attract demos, special stages) it is the game's Start
+    b = input_bind_down(BIND_START);
+    if (!b) start_held = false;
+    int stage = intro_stage();
+    if (b && !k_start && !uitest_prefix && !apptest_prefix && (stage == 1 || (stage < 0 && wide_stage()))) {
+      mode = M_MENU; ui_init(); input_flush_edges(); k_start = true; bram_flush(); continue;
+    }
+    k_start = b;
     b = input_bind_down(BIND_SAVE); if (b && !k_save) save_state(); k_save = b;
     b = input_bind_down(BIND_LOAD); if (b && !k_load) load_state(); k_load = b;
     b = input_key(VK_F3); if (b && !k_slot) { slot = (slot + 1) % 10; osd_message("State slot %d", slot); } k_slot = b;
@@ -365,7 +389,7 @@ int app_run(const char *disc) {
     int frames = 0;
     if (!paused) {
       io_six_button = cfg.six_button;
-      io_set_pad(0, uitest_prefix ? pv_pad(ut_game_frames) : input_md_mask());
+      io_set_pad(0, uitest_prefix ? pv_pad(ut_game_frames) : input_md_mask() & (start_held ? ~PAD_START : 0xffff));
       if (ff) {
         for (int i = 0; i < (uitest_prefix ? 20 : cfg.ff_speed); i++) {
           if (uitest_prefix) io_set_pad(0, pv_pad(ut_game_frames + frames));

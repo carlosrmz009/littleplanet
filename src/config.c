@@ -21,12 +21,12 @@ void cfg_defaults_bindings(Settings *s) {
 void cfg_defaults(Settings *s) {
   memset(s, 0, sizeof *s);
   s->filter = FILT_SMOOTH; s->crt_mask = MASK_APERTURE; s->crt_curvature = 1; s->crt_scanlines = 70; s->crt_glow = 40;
-  s->aspect = ASPECT_4_3; s->integer_scale = 0; s->fullscreen = 0; s->vsync = 1; s->show_fps = 0;
+  s->screen = ASPECT_WIDE; s->wide_fill = 1; s->integer_scale = 0; s->fullscreen = 0; s->vsync = 1; s->show_fps = 0;
   s->sound = SOUND_CLEAN; s->volume = 100; s->ff_speed = 4; s->six_button = 0;
   cfg_defaults_bindings(s);
 }
 
-#define FIELDS(X) X(filter) X(crt_mask) X(crt_curvature) X(crt_scanlines) X(crt_glow) X(aspect) X(integer_scale) \
+#define FIELDS(X) X(filter) X(crt_mask) X(crt_curvature) X(crt_scanlines) X(crt_glow) X(screen) X(wide_fill) X(integer_scale) \
   X(fullscreen) X(vsync) X(show_fps) X(sound) X(volume) X(ff_speed) X(six_button) X(intro)
 
 void cfg_load(const char *path) {
@@ -48,7 +48,7 @@ void cfg_load(const char *path) {
   }
   fclose(f);
   if (cfg.filter < 0 || cfg.filter >= FILT_COUNT) cfg.filter = FILT_SMOOTH;
-  if (cfg.aspect < 0 || cfg.aspect >= ASPECT_COUNT) cfg.aspect = ASPECT_4_3;
+  if (cfg.screen < 0 || cfg.screen >= ASPECT_COUNT) cfg.screen = ASPECT_WIDE;
   if (cfg.sound < 0 || cfg.sound > 1) cfg.sound = SOUND_CLEAN;
   if (cfg.intro < 0 || cfg.intro > 1) cfg.intro = INTRO_REMASTERED;
 }

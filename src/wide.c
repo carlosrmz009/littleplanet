@@ -50,6 +50,7 @@ static void apply(int f, bool on) {
 }
 
 void wide_enable(bool on) { enabled = on; }
+bool wide_stage(void) { return cur >= 0; }
 void wide_reset(void) { cur = -1; }
 
 void wide_check(void) {

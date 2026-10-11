@@ -17,3 +17,4 @@ void wide_reset(void);         // a state was loaded: find the stage again
 void wide_check(void);         // Word RAM came back to the main CPU, or a new frame: patch or unpatch the stage
 void wide_frame(void);         // a frame starts: how far the picture reaches past each side (vdp_exl, vdp_exr)
 int wide_trap(M68k *c, int id);   // line-A $a8xx in the patched code
+bool wide_stage(void);         // a stage (or an attract demo) is running: its engine is in Word RAM

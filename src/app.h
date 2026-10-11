@@ -5,7 +5,7 @@
 
 enum { FILT_NEAREST, FILT_SMOOTH, FILT_PIXELART, FILT_CRT, FILT_COUNT };
 enum { MASK_APERTURE, MASK_SHADOW, MASK_SLOT, MASK_COUNT };
-enum { ASPECT_4_3, ASPECT_SQUARE, ASPECT_16_9_AMBIENT, ASPECT_WIDE, ASPECT_COUNT };   // ASPECT_WIDE: true widescreen in the stages
+enum { ASPECT_4_3, ASPECT_16_9_AMBIENT, ASPECT_WIDE, ASPECT_COUNT };   // ASPECT_WIDE: True16:9, the stages drawn wide (wide.c)
 enum { SOUND_ACCURATE, SOUND_CLEAN };
 enum { INTRO_REMASTERED, INTRO_ORIGINAL };
 
@@ -16,7 +16,7 @@ extern const char *bind_names[BIND_COUNT];
 
 typedef struct {
   int filter, crt_mask, crt_curvature, crt_scanlines, crt_glow;
-  int aspect, integer_scale, fullscreen, vsync, show_fps;
+  int screen, wide_fill, integer_scale, fullscreen, vsync, show_fps;
   int sound, volume, ff_speed, six_button, intro;
   int key[BIND_COUNT];
   int pad[BIND_COUNT];
@@ -70,6 +70,7 @@ typedef enum { UI_NONE, UI_START_GAME, UI_RESUME, UI_QUIT, UI_RESET } UiResult;
 void ui_init(void);
 UiResult ui_frame(bool in_game);
 void ui_set_preview_frames(const u32 *scene[2], const int scene_w[2], const s16 *audio, int audio_frames);
+void ui_set_preview_wide(const u32 *scene[2], const int w[2], const int exl[2]);   // True16:9 versions (w 0: none)
 void ui_set_intro_still(int which, const u32 *pix, int w, int h);   // 0 the game's FMV, 1 the remaster
 void osd_message(const char *fmt, ...);
 void osd_draw(double fps);
@@ -79,6 +80,7 @@ void osd_caption(const char *s, float alpha, Rect r);   // bottom-right corner o
 void intro_reset(bool newgame);   // newgame: play the remaster before a new game too
 bool intro_holding(void);          // a new game waits for the remaster
 void intro_state_loaded(void);
+int intro_stage(void);              // the program the drive last loaded is a stage: 1, something else: 0, unknown: -1
 int intro_hold_step(double dt, bool skip, s16 *audio, int max);
 bool intro_step(double dt, s16 *audio, int *frames, int max);   // after each emulated frame
 bool intro_active(void);

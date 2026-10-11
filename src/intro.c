@@ -100,6 +100,14 @@ static int prog_at(u32 lba) {
 
 bool intro_holding(void) { return holding; }
 
+// what the drive last loaded: 1 a stage (R11A__.MMD...), 0 something else (title, menus, special stage,
+// attract demo), -1 not known (nothing since a state was loaded)
+int intro_stage(void) {
+  if (last_prog < 0) return -1;
+  const char *n = progs[last_prog].name;
+  return n[0] == 'R' && n[1] >= '1' && n[1] <= '9';
+}
+
 // a loaded state carries on from where it was: no new game to wait for, and no false one from the jump
 void intro_state_loaded(void) {
   holding = active = false;

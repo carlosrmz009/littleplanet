@@ -22,7 +22,7 @@ Windows, macOS and Linux.
   recompiler that turns it into C, which is what runs (checked frame by frame against the interpreter).
 * **Remastered opening.** [LuanUP](https://www.youtube.com/@LuanUP)'s 4K 60 fps remaster in place of the FMV,
   synced to the game; the original is one setting away.
-* **True widescreen.** The stages drawn 16:9, showing more of the level instead of stretching it.
+* **True16:9.** The stages drawn widescreen, showing more of the level instead of stretching it. On by default.
 * **Any disc image.** cue/bin (split or single), cue with wav/flac/ogg/mp3 audio, iso, ccd/img/sub and chd.
 * **Launcher.** Dressed like the 90s Japanese Sonic boxes. CRT filters, aspect options, pad support, save states.
 
@@ -94,12 +94,14 @@ Simply the best way to enjoy Sonic CD on PC.
 
 ### Extras
 
-The setup menu has a live preview. Esc, Home or Select+Start opens it in game.
+The setup menu has a live preview. In game, Start opens it during a stage (as in the 2011 version; on the
+title and the game's own menus Start stays the game's), and Esc, Home or Select+Start open it anywhere.
 
 | Option | |
 |---|---|
 | Filter | Sharp, Smooth, Scale4x, or CRT (grille/shadow/slot mask, scanlines, glow, curvature) |
-| Aspect | 4:3 (as on a TV), square pixels, 16:9 fill (blurred sides), 16:9 widescreen (see below) |
+| Aspect | True16:9 (see above), 4:3 (as on a TV), or 16:9 blur-fill (4:3 with the picture blurred into the sides) |
+| 4:3 screens | In True16:9, what fills the sides of the screens that stay 4:3 (title, menus, special stages): Blur-fill (default) or Black bars |
 | Sound | Clean, or Accurate: adds the Model 1 Mega Drive's low-pass on FM and PSG (CD audio is never filtered) |
 | Intro | Remastered (LuanUP's 4K remaster, see above) or Original (the game's FMV) |
 | Controller | 3 button (default, what Sonic CD was made for) or 6 button (the real 6-button protocol) |
@@ -221,7 +223,7 @@ src/
   asic.c             Mega-CD graphics ASIC
   disc.c version.c   disc images, known releases
   movie.c intro.c    remastered opening: FFmpeg playback, synced to the CD drive
-  wide.c             widescreen: the stage engine's patches, the picture's edges
+  wide.c             True16:9: the stage engine's patches, the picture's edges
   recomp.c           runs the recompiled game code (generated from asm/ at build time)
   app.c ui.c video.c config.c discwiz.c update.c state.c
   ui_art.c vg.c gfx.c launcher art, its vector renderer (text via stb_truetype), installer widgets

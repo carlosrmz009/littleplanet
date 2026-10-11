@@ -14,6 +14,7 @@ static void canvas_ensure(int w, int h) {
 }
 
 static const u32 *sc[2]; static int sc_w[2];
+static const u32 *scw[2]; static int scw_w[2], scw_exl[2];   // the scenes at True16:9 (the game's screen from scw_exl)
 static int clip_frames;
 static int scene = -1;
 static u32 *pv_big;
@@ -29,6 +30,10 @@ void ui_set_preview_frames(const u32 *scene[2], const int scene_w[2], const s16 
   clip_frames = audio_frames;
 }
 
+void ui_set_preview_wide(const u32 *scene[2], const int w[2], const int exl[2]) {
+  for (int i = 0; i < 2; i++) { scw[i] = scene[i]; scw_w[i] = w[i]; scw_exl[i] = exl[i]; }
+}
+
 typedef enum { IT_ACTION, IT_CHOICE, IT_SLIDER } ItemType;
 typedef struct {
   const char *label; ItemType type; int *val; int min, max, step;
@@ -38,8 +43,9 @@ typedef struct {
 enum { A_START = 1, A_CONTROLS, A_RESET, A_QUIT, A_SAMPLE };
 static const char *filters[] = { "Sharp", "Smooth", "Scale4x", "CRT" };
 static const char *masks[] = { "Grille", "Shadow", "Slot" };
-static const char *aspects[] = { "4:3", "Square pixels", "16:9 fill", "16:9 widescreen" };
+static const char *aspects[] = { "4:3", "16:9 blur-fill", "True16:9" };
 static const char *onoff[] = { "Off", "On" };
+static const char *fills[] = { "Black bars", "Blur-fill" };
 static const char *audios[] = { "Accurate", "Clean" };
 static const char *pads[] = { "3 button", "6 button" };
 static const char *intros[] = { "Remastered", "Original" };
@@ -54,7 +60,8 @@ static void build_items(bool in_game) {
   ADD("Scanlines", IT_SLIDER, &cfg.crt_scanlines, 0, 100, 10, NULL, "Scanline strength.", 0, 0);
   ADD("Glow", IT_SLIDER, &cfg.crt_glow, 0, 100, 10, NULL, "Bloom around bright stuff.", 0, 0);
   ADD("Curvature", IT_CHOICE, &cfg.crt_curvature, 0, 1, 1, onoff, "Curved glass, dark corners.", 0, 0);
-  ADD("Aspect", IT_CHOICE, &cfg.aspect, 0, ASPECT_COUNT - 1, 1, aspects, "4:3 is how it looked on a TV. 16:9 fill blurs the picture into the sides; 16:9 widescreen shows more of every stage, as in the 2011 version.", 1, 0);
+  ADD("Aspect", IT_CHOICE, &cfg.screen, 0, ASPECT_COUNT - 1, 1, aspects, "True16:9 shows more of every stage, as in the 2011 version. 4:3 is how it looked on a TV; 16:9 blur-fill blurs the picture into the sides.", 1, 0);
+  ADD("4:3 screens", IT_CHOICE, &cfg.wide_fill, 0, 1, 1, fills, "In True16:9, what fills the sides of the screens that stay 4:3: the title, menus, special stages.", 0, 0);
   ADD("Integer scale", IT_CHOICE, &cfg.integer_scale, 0, 1, 1, onoff, "Even pixels. Might leave borders.", 0, 0);
   ADD("Sound", IT_CHOICE, &cfg.sound, 0, 1, 1, audios, "Accurate adds the Model 1's filter on FM and PSG. CD music is never filtered. Enter plays a sample.", -2, A_SAMPLE);
   ADD("Volume", IT_SLIDER, &cfg.volume, 0, 100, 10, NULL, "Volume.", -2, 0);
@@ -79,6 +86,7 @@ static int hover = -1;
 static bool item_enabled(const Item *it) {
   if (it->val == &cfg.crt_mask || it->val == &cfg.crt_scanlines || it->val == &cfg.crt_glow || it->val == &cfg.crt_curvature)
     return cfg.filter == FILT_CRT;
+  if (it->val == &cfg.wide_fill) return cfg.screen == ASPECT_WIDE;
   return true;
 }
 
@@ -205,7 +213,7 @@ UiResult ui_frame(bool in_game) {
 #define PM(a, b) ((1u << (a)) | (1u << (b)))
   bool up = nav(VK_UP, PM(PB_DUP, PB_LS_UP), &n_up), dn = nav(VK_DOWN, PM(PB_DDOWN, PB_LS_DOWN), &n_dn);
   bool lt = nav(VK_LEFT, PM(PB_DLEFT, PB_LS_LEFT), &n_lt), rt = nav(VK_RIGHT, PM(PB_DRIGHT, PB_LS_RIGHT), &n_rt);
-  bool ok = nav(VK_RETURN, 1u << PB_SOUTH, &n_ok), bk = nav(VK_ESCAPE, 1u << PB_EAST, &n_bk), tb = nav(VK_TAB, 1u << PB_NORTH, &n_tab);
+  bool ok = nav(VK_RETURN, 1u << PB_SOUTH, &n_ok), bk = nav(VK_ESCAPE, PM(PB_EAST, PB_START), &n_bk), tb = nav(VK_TAB, 1u << PB_NORTH, &n_tab);
 #undef PM
   canvas_ensure(video_width(), video_height());
 
@@ -301,13 +309,18 @@ UiResult ui_frame(bool in_game) {
     }
   } else if (page == 0 && sc[0]) {
     int s = scene >= 0 ? scene : (items[sel].scene == 1 ? 1 : 0);
+    bool wide = cfg.screen == ASPECT_WIDE && scw[s] && scw_w[s];
+    const u32 *pic = wide ? scw[s] : sc[s];
+    int pw = wide ? scw_w[s] : sc_w[s];
     if (cfg.filter == FILT_PIXELART) {
       if (!pv_big) pv_big = malloc(GAME_W * 4 * GAME_H * 4 * 4);
-      scale_epx(sc[s], sc_w[s], GAME_H, pv_big, 4);
-      video_upload_game(pv_big, sc_w[s] * 4, GAME_H * 4);
-    } else video_upload_game(sc[s], sc_w[s], GAME_H);
+      scale_epx(pic, pw, GAME_H, pv_big, 4);
+      video_upload_game(pv_big, pw * 4, GAME_H * 4);
+    } else video_upload_game(pic, pw, GAME_H);
     video_draw_game(&cfg, pr, 0, 0, 1, 1);
-    float cxu = s == 1 ? 0.30f : 0.42f, cyv = s == 1 ? 0.62f : 0.28f, du = 0.5f / 6, dv = 0.5f / 6 * ((float)ir.h / ir.w) * (4.0f / 3);
+    // the zoomed detail: the same spot of the game's screen either way
+    float cx = (s == 1 ? 0.30f : 0.42f) * sc_w[s] + (wide ? scw_exl[s] : 0), cyv = s == 1 ? 0.62f : 0.28f;
+    float du = 0.5f / 6 * sc_w[s] / pw, dv = 0.5f / 6 * ((float)ir.h / ir.w) * (4.0f / 3), cxu = cx / pw;
     video_draw_game(&cfg, ir, cxu - du, cyv - dv, cxu + du, cyv + dv);
   }
   return res;
