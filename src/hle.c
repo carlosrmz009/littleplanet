@@ -139,7 +139,10 @@ int hle_main_trap(M68k *c) {
     return 1;
   }
   case T_DMA: {
-    u32 src = c->r[0], cmd = c->r[1], len = c->r[2] & 0xffff;
+    u32 cmd = c->r[0], src = c->r[1], len = c->r[2] & 0xffff;   // d0 VDP command, d1 source, d2 words
+    // Word RAM reaches the VDP one word late; the BIOS routine starts the DMA one word on
+    // (verified on the opening movie: without it every tile row is shifted by 4 pixels)
+    if (src >= 0x200000 && src < 0x240000) src += 2;
     u8 r1 = vdp.reg[1];
     vdp_write16(0xc00004, 0x8100 | r1 | 0x10);
     vdp_write16(0xc00004, 0x9300 | (len & 0xff));

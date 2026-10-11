@@ -6,6 +6,7 @@
 #include "io.h"
 #include "audio.h"
 #include "version.h"
+#include "cdc.h"
 
 static void save_bmp(const char *path) {
   int w = 320, h = vdp.active_lines;
@@ -33,7 +34,7 @@ static void save_bmp(const char *path) {
 typedef struct { int frame; u16 pad; } ScriptLine;
 
 int main(int argc, char **argv) {
-  const char *disc = NULL, *shotprefix = "shot", *script = NULL, *dump = NULL;
+  const char *disc = NULL, *shotprefix = "shot", *script = NULL, *dump = NULL, *wav = NULL;
   int frames = 0;
   int shots[256], nshots = 0;
   for (int i = 1; i < argc; i++) {
@@ -44,6 +45,7 @@ int main(int argc, char **argv) {
     } else if (!strcmp(argv[i], "--shotprefix") && i + 1 < argc) shotprefix = argv[++i];
     else if (!strcmp(argv[i], "--script") && i + 1 < argc) script = argv[++i];
     else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
+    else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav = argv[++i];
     else disc = argv[i];
   }
   if (!disc) { fprintf(stderr, "usage: littleplanet [--frames N] [--shot a,b] [--script FILE] DISC\n"); return 2; }
@@ -60,15 +62,27 @@ int main(int argc, char **argv) {
     while (f && nsl < 4096 && fscanf(f, "%u %x", &fr, &pad) == 2) { sl[nsl].frame = fr; sl[nsl].pad = pad; nsl++; }
     if (f) fclose(f);
   }
+  FILE *wf = wav ? u8fopen(wav, "wb") : NULL;
+  u32 wav_bytes = 0;
+  if (wf) { u8 h[44] = {0}; fwrite(h, 1, 44, wf); }
   for (int fr = 0; fr < frames; fr++) {
     while (si < nsl && sl[si].frame <= fr) { io_set_pad(0, sl[si].pad); si++; }
     mcd_run_frame();
+    s16 buf[4096 * 2];
+    int n;
+    while ((n = audio_fetch(buf, 4096)) > 0) if (wf) { fwrite(buf, 4, n, wf); wav_bytes += n * 4; }
     for (int k = 0; k < nshots; k++) if (shots[k] == fr) {
       char p[512]; snprintf(p, sizeof p, "%s_%05d.bmp", shotprefix, fr);
       save_bmp(p);
     }
     if (getenv("LP_TRACE") && fr % 60 == 0)
-      fprintf(stderr, "frame %d main pc %06x sub pc %06x sub sr %04x drive %d lba %u\n", fr, mcpu.pc, scpu.pc, scpu.sr, 0, 0);
+      fprintf(stderr, "frame %d main pc %06x sub pc %06x sr %04x | drive %d track %d lba %u\n", fr, mcpu.pc, scpu.pc, scpu.sr, drive.state, drive.track, drive.lba);
+  }
+  if (wf) {
+    u8 h[44] = "RIFF....WAVEfmt \x10\0\0\0\1\0\2\0....\0\0\0\0\4\0\x10\0data....";
+    u32 rate = AUDIO_RATE, br = AUDIO_RATE * 4, rl = wav_bytes + 36;
+    memcpy(h + 4, &rl, 4); memcpy(h + 24, &rate, 4); memcpy(h + 28, &br, 4); memcpy(h + 40, &wav_bytes, 4);
+    fseek(wf, 0, SEEK_SET); fwrite(h, 1, 44, wf); fclose(wf);
   }
   if (dump) {
     struct { const char *n; void *p; size_t s; } d[] = {{"work", mcd.work_ram, sizeof mcd.work_ram}, {"prg", mcd.prg_ram, sizeof mcd.prg_ram},
@@ -78,6 +92,7 @@ int main(int argc, char **argv) {
       FILE *f = u8fopen(p, "wb"); if (f) { fwrite(d[k].p, 1, d[k].s, f); fclose(f); }
     }
   }
+  printf("wordram mode %s ret %d dmna %d  cdc_mode %04x dma %04x\n", mcd.mode1m ? "1M" : "2M", mcd.ret, mcd.dmna, mcd.cdc_mode, mcd.cdc_dma_addr);
   printf("main pc %06x sr %04x  sub pc %06x sr %04x\n", mcpu.pc, mcpu.sr, scpu.pc, scpu.sr);
   return 0;
 }
