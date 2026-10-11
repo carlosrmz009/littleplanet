@@ -359,6 +359,10 @@ static void cdbios(M68k *c) {
   case 0x8c: {                                                   // CDCTRN
     u8 buf[2048], hdr[4];
     cdc_trn(buf, hdr);
+    if (getenv("LP_CDCLOG")) {
+      u32 lba = ((hdr[0] >> 4) * 10 + (hdr[0] & 15)) * 4500 + ((hdr[1] >> 4) * 10 + (hdr[1] & 15)) * 75 + (hdr[2] >> 4) * 10 + (hdr[2] & 15) - 150;
+      fprintf(stderr, "cdctrn lba %u -> %06x\n", lba, c->r[8]);
+    }
     for (int i = 0; i < 2048; i++) sub_w8(c->r[8] + i, buf[i]);
     for (int i = 0; i < 4; i++) sub_w8(c->r[9] + i, hdr[i]);
     c->r[8] += 2048; c->r[9] += 4;

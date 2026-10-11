@@ -182,6 +182,7 @@ void m68k_step(M68k *c) {
   if (lvl && (lvl == 7 || lvl > ((c->sr >> 8) & 7))) { interrupt(c, lvl); return; }
   if (c->stopped || c->halted) { c->cyc += 4; return; }
   bool tr = c->sr & SR_T;
+  if (c->cov) c->cov(c);
   c->ipc = c->pc;
   u16 op = fw(c);
   c->ir = op;

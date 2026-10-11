@@ -21,6 +21,7 @@ typedef struct M68k {
   int (*iack)(int level);           // vector number, or -1 for autovector
   void (*reset_out)(void);          // RESET instruction
   int (*line_a)(struct M68k *c);    // HLE traps; returns 1 if handled
+  void (*cov)(struct M68k *c);      // coverage recording (optional), called before each instruction
 } M68k;
 
 enum { SR_C = 1, SR_V = 2, SR_Z = 4, SR_N = 8, SR_X = 16, SR_S = 0x2000, SR_T = 0x8000 };

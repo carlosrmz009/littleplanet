@@ -67,6 +67,13 @@ int main(int argc, char **argv) {
       fclose(o);
       done++;
     }
+    if (argc == 4) {   // the boot area (system header, IP and SP) as BOOT.BIN
+      char p[1200]; snprintf(p, sizeof p, "%s/BOOT.BIN", argv[3]);
+      FILE *o = u8fopen(p, "wb");
+      u8 sec[2048];
+      for (u32 s = 0; s < 16 && o; s++) { disc_read_data(s, sec); fwrite(sec, 1, 2048, o); }
+      if (o) { fclose(o); done++; }
+    }
     printf("extracted %d files\n", done);
   } else if (!strcmp(argv[1], "wav") && argc == 5) {
     int tr = atoi(argv[3]) - 1;

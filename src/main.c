@@ -8,6 +8,7 @@
 #include "version.h"
 #include "cdc.h"
 #include "state.h"
+#include "cov.h"
 
 #define LP_VERSION "Little Planet 1.0"
 
@@ -40,21 +41,28 @@ int game_picture(u32 *dst, int *w, int *h) {
   return maxw;
 }
 
-static struct { int frame; u16 mask; } script[4096];
+// script lines: "frame hexmask" holds pad bits from that frame on;
+// "frame W hexaddr hexvalue" pokes a main-CPU byte (test automation)
+static struct { int frame; u16 mask; bool poke; u32 addr; u8 val; } script[4096];
 static int nscript;
 static void load_script(const char *path) {
   FILE *f = fopen(path, "r");
   if (!f) return;
   char line[256];
   while (fgets(line, sizeof line, f) && nscript < 4096) {
-    int fr; unsigned m;
-    if (sscanf(line, "%d %x", &fr, &m) == 2) { script[nscript].frame = fr; script[nscript].mask = (u16)m; nscript++; }
+    int fr; unsigned m, a, v;
+    if (sscanf(line, "%d W %x %x", &fr, &a, &v) == 3) { script[nscript].frame = fr; script[nscript].poke = true; script[nscript].addr = a; script[nscript].val = (u8)v; nscript++; }
+    else if (sscanf(line, "%d %x", &fr, &m) == 2) { script[nscript].frame = fr; script[nscript].mask = (u16)m; nscript++; }
   }
   fclose(f);
 }
 static u16 script_pad(int frame) {
   u16 m = 0;
-  for (int i = 0; i < nscript; i++) if (script[i].frame <= frame) m = script[i].mask;
+  for (int i = 0; i < nscript; i++) {
+    if (script[i].frame > frame) continue;
+    if (script[i].poke) { if (script[i].frame == frame) main_w8(script[i].addr, script[i].val); }
+    else m = script[i].mask;
+  }
   return m;
 }
 
@@ -91,7 +99,7 @@ const char *disc_wizard(void);
 const char *uitest_prefix;
 
 int main(int argc, char **argv) {
-  const char *disc = NULL, *shot_prefix = "shot", *dump = NULL, *wav_path = NULL, *state_in = NULL, *state_out = NULL;
+  const char *disc = NULL, *shot_prefix = "shot", *dump = NULL, *wav_path = NULL, *state_in = NULL, *state_out = NULL, *cov_path = NULL;
   FILE *hashlog = NULL;
   int frames = -1, shots[256], nshots = 0;
   for (int i = 1; i < argc; i++) {
@@ -107,6 +115,7 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--savestate") && i + 1 < argc) state_out = argv[++i];
     else if (!strcmp(argv[i], "--uitest") && i + 1 < argc) uitest_prefix = argv[++i];
     else if (!strcmp(argv[i], "--debug")) mcd_debug(true);
+    else if (!strcmp(argv[i], "--cov") && i + 1 < argc) cov_path = argv[++i];
     else if (!strncmp(argv[i], "-psn", 4)) {}
     else disc = argv[i];
   }
@@ -122,6 +131,7 @@ int main(int argc, char **argv) {
 
   char err[512];
   if (!disc || !machine_start(disc, err, sizeof err)) { fprintf(stderr, "%s\n", disc ? err : "no disc image given"); return 1; }
+  if (cov_path) cov_enable();
   if (state_in && !app_load_state(state_in)) { fprintf(stderr, "can't load state %s\n", state_in); return 1; }
   FILE *wav = wav_path ? u8fopen(wav_path, "wb") : NULL;
   u32 wav_bytes = 0;
@@ -154,6 +164,7 @@ int main(int argc, char **argv) {
     fseek(wav, 0, SEEK_SET); fwrite(h, 1, 44, wav); fclose(wav);
   }
   if (state_out) app_save_state(state_out);
+  if (cov_path) cov_save(cov_path);
   if (dump) {
     struct { const char *n; void *p; size_t s; } d[] = {{"work", mcd.work_ram, sizeof mcd.work_ram}, {"prg", mcd.prg_ram, sizeof mcd.prg_ram},
       {"word", mcd.word_ram, sizeof mcd.word_ram}, {"vram", vdp.vram, sizeof vdp.vram}, {"cram", vdp.cram, sizeof vdp.cram}};
