@@ -8,7 +8,11 @@ SHA=a71f65310c3902fc5284d5bdc22df8aab3b90479399d88b7c2de3257b49a1dd9
 check() { if command -v sha256sum >/dev/null; then echo "$SHA  $1" | sha256sum -c - >/dev/null; else echo "$SHA  $1" | shasum -a 256 -c - >/dev/null; fi; }
 mkdir -p build
 if [ -f build/intro.mkv ] && check build/intro.mkv; then echo "build/intro.mkv is up to date"; exit 0; fi
-if ! curl -fL --retry 5 -o build/intro.mkv.part "$URL"; then
+if [ -n "$GH_TOKEN" ] && command -v gh >/dev/null; then
+  # CI: the workflow's token also works while the repository is private
+  rm -f build/intro.mkv.part
+  gh release download intro --repo carlosrmz009/littleplanet --pattern intro.mkv --output build/intro.mkv.part
+elif ! curl -fL --retry 5 -o build/intro.mkv.part "$URL"; then
   # some networks block release downloads but not the API: fetch the same asset through it
   API=https://api.github.com/repos/carlosrmz009/littleplanet/releases/tags/intro
   ID="$(curl -fsSL "$API" | python3 -c 'import json, sys; print(json.load(sys.stdin)["assets"][0]["id"])')"

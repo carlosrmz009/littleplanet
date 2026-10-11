@@ -46,6 +46,8 @@ jobs:
       - name: remastered opening
         if: steps.intro-cache.outputs.cache-hit != 'true'
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./tools/fetch_intro.sh
       - uses: ilammy/msvc-dev-cmd@v1
       - name: build
@@ -114,6 +116,8 @@ jobs:
       - name: remastered opening
         if: steps.intro-cache.outputs.cache-hit != 'true'
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./tools/fetch_intro.sh
       - name: build
         run: |
@@ -248,6 +252,8 @@ jobs:
       - name: remastered opening
         if: steps.intro-cache.outputs.cache-hit != 'true'
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./tools/fetch_intro.sh
       - name: appimagetool
         run: |
