@@ -40,14 +40,19 @@ static bool make_link(const wchar_t *lnk, const wchar_t *target) {
 static void reg_sz(const wchar_t *key, const wchar_t *name, const wchar_t *v) { RegSetKeyValueW(HKEY_CURRENT_USER, key, name, REG_SZ, v, (DWORD)(wcslen(v) + 1) * 2); }
 static void reg_dw(const wchar_t *key, const wchar_t *name, DWORD v) { RegSetKeyValueW(HKEY_CURRENT_USER, key, name, REG_DWORD, &v, 4); }
 
-// libraries shipped next to the game (FFmpeg for the remastered opening): resource 101 packs them as
-// "LPL1" then, per file, u16 name length, name, u32 size, data (tools/packlibs.py)
+// files shipped next to the game (FFmpeg and the remastered opening): resource 101 packs them as
+// "LPL1" then, per file, u16 name length, name, u32 size, data (tools/packlibs.py).
+// Their names go in files.txt, which the uninstaller (a copy without the payload) reads back.
+#define MANIFEST L"files.txt"
+static DWORD payload_bytes;
 static bool libs(bool write) {
   HRSRC r = FindResourceW(NULL, MAKEINTRESOURCEW(101), (LPCWSTR)RT_RCDATA);
   if (!r) return true;
   DWORD n = SizeofResource(NULL, r); const unsigned char *p = LockResource(LoadResource(NULL, r));
   if (!p || n < 4 || memcmp(p, "LPL1", 4)) return true;
   bool ok = true;
+  wchar_t mpath[MAX_PATH]; join(mpath, dir, MANIFEST);
+  FILE *m = write ? _wfopen(mpath, L"wb") : NULL;
   for (DWORD o = 4; o + 2 <= n;) {
     unsigned nl = p[o] | p[o + 1] << 8; o += 2;
     if (o + nl + 4 > n) break;
@@ -62,10 +67,43 @@ static bool libs(bool write) {
       FILE *f = _wfopen(path, L"wb");
       if (!f || fwrite(p + o, 1, sz, f) != sz) ok = false;
       if (f) fclose(f);
-    } else DeleteFileW(path);
+      if (m) fprintf(m, "%s\n", name);
+      payload_bytes += sz;
+    }
     o += sz;
   }
+  if (m) fclose(m);
   return ok;
+}
+
+static void libs_remove(void) {
+  wchar_t mpath[MAX_PATH]; join(mpath, dir, MANIFEST);
+  FILE *m = _wfopen(mpath, L"rb");
+  if (!m) return;
+  char line[256];
+  while (fgets(line, sizeof line, m)) {
+    line[strcspn(line, "\r\n")] = 0;
+    if (!line[0] || strchr(line, '\\') || strchr(line, '/') || strstr(line, "..")) continue;
+    wchar_t wname[256], path[MAX_PATH];
+    MultiByteToWideChar(CP_UTF8, 0, line, -1, wname, 256);
+    join(path, dir, wname);
+    DeleteFileW(path);
+  }
+  fclose(m);
+  DeleteFileW(mpath);
+}
+
+// the uninstaller: the same program without the payload (resource 102), or a copy of this one
+static void write_uninstaller(const wchar_t *un) {
+  wchar_t self[MAX_PATH];
+  GetModuleFileNameW(NULL, self, MAX_PATH);
+  if (!_wcsicmp(self, un)) return;
+  HRSRC r = FindResourceW(NULL, MAKEINTRESOURCEW(102), (LPCWSTR)RT_RCDATA);
+  DWORD n = r ? SizeofResource(NULL, r) : 0; const void *p = r ? LockResource(LoadResource(NULL, r)) : NULL;
+  FILE *f = p && n ? _wfopen(un, L"wb") : NULL;
+  bool ok = f && fwrite(p, 1, n, f) == n;
+  if (f) fclose(f);
+  if (!ok) CopyFileW(self, un, FALSE);
 }
 
 static const char *install(void) {
@@ -73,22 +111,21 @@ static const char *install(void) {
   HRSRC r = FindResourceW(NULL, MAKEINTRESOURCEW(100), (LPCWSTR)RT_RCDATA);
   if (!r) return "This installer is broken. Download it again.";
   DWORD n = SizeofResource(NULL, r); const void *p = LockResource(LoadResource(NULL, r));
-  wchar_t exe[MAX_PATH], un[MAX_PATH], self[MAX_PATH], lnk[MAX_PATH];
+  wchar_t exe[MAX_PATH], un[MAX_PATH], lnk[MAX_PATH];
   join(exe, dir, EXE); join(un, dir, L"uninstall.exe");
   FILE *f = _wfopen(exe, L"wb");
   if (!f) return "Can't write there. Close the game or pick another folder.";
   bool ok = fwrite(p, 1, n, f) == n; fclose(f);
   if (!ok) return "Ran out of space?";
   if (!libs(true)) return "Can't write there. Close the game or pick another folder.";
-  GetModuleFileNameW(NULL, self, MAX_PATH);
-  if (_wcsicmp(self, un)) CopyFileW(self, un, FALSE);
+  write_uninstaller(un);
   special(CSIDL_PROGRAMS, APP L".lnk", lnk); make_link(lnk, exe);
   special(CSIDL_DESKTOPDIRECTORY, APP L".lnk", lnk);
   if (desk) make_link(lnk, exe); else DeleteFileW(lnk);
   wchar_t cmd[MAX_PATH + 32]; swprintf(cmd, MAX_PATH + 32, L"\"%s\" --uninstall", un);
   reg_sz(UNKEY, L"DisplayName", APP); reg_sz(UNKEY, L"DisplayIcon", exe); reg_sz(UNKEY, L"DisplayVersion", L"1.0");
   reg_sz(UNKEY, L"Publisher", L"carlos ramirez"); reg_sz(UNKEY, L"InstallLocation", dir); reg_sz(UNKEY, L"UninstallString", cmd);
-  reg_dw(UNKEY, L"NoModify", 1); reg_dw(UNKEY, L"NoRepair", 1); reg_dw(UNKEY, L"EstimatedSize", n / 1024);
+  reg_dw(UNKEY, L"NoModify", 1); reg_dw(UNKEY, L"NoRepair", 1); reg_dw(UNKEY, L"EstimatedSize", (n + payload_bytes) / 1024);
   reg_sz(APKEY, NULL, exe); reg_sz(APKEY, L"Path", dir);
   SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
   return NULL;
@@ -98,7 +135,7 @@ static const char *uninstall(void) {
   wchar_t exe[MAX_PATH], lnk[MAX_PATH];
   join(exe, dir, EXE);
   if (GetFileAttributesW(exe) != INVALID_FILE_ATTRIBUTES && !DeleteFileW(exe)) return "Close the game first.";
-  libs(false);
+  libs_remove();
   special(CSIDL_PROGRAMS, APP L".lnk", lnk); DeleteFileW(lnk);
   special(CSIDL_DESKTOPDIRECTORY, APP L".lnk", lnk); DeleteFileW(lnk);
   RegDeleteTreeW(HKEY_CURRENT_USER, UNKEY); RegDeleteTreeW(HKEY_CURRENT_USER, APKEY);

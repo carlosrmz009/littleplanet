@@ -1,3 +1,4 @@
 1 ICON "res/littleplanet.ico"
 100 RCDATA "build/lp.exe"
 101 RCDATA "build/gen/libs.bin"
+102 RCDATA "build/uninst.exe"

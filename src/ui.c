@@ -317,3 +317,23 @@ void osd_draw(double fps) {
     }
   video_draw_rgba(ov, w, h, (Rect){ 4 * px, 4 * px, w * px, h * px }, true);
 }
+
+// a line of text in the bottom-right corner over the picture (the remastered opening's credit)
+void osd_caption(const char *s, float alpha, Rect r) {
+  if (alpha <= 0) return;
+  canvas_ensure(video_width(), video_height());
+  static u32 *ov; static int ow, oh;
+  int w = text_w(f_small, s) + 12, h = 11 + 9;
+  if (w > cw) w = cw;
+  if (ow != w || oh != h) { free(ov); ov = malloc((size_t)w * h * 4); ow = w; oh = h; }
+  fill(0, 0, w, h, RGB(0, 0, 0));
+  text(6, 3, f_small, RGB(255, 255, 255), s);
+  GdiFlush();
+  for (int y = 0; y < h; y++)
+    for (int x = 0; x < w; x++) {
+      u32 l = canvas[y * cw + x] & 255;     // white text on black: coverage
+      u32 a = (u32)((110 + l * 145 / 255) * alpha);
+      ov[y * w + x] = a << 24 | l * 0x010101;
+    }
+  video_draw_rgba(ov, w, h, (Rect){ r.x + r.w - (w + 6) * px, r.y + r.h - (h + 6) * px, w * px, h * px }, true);
+}

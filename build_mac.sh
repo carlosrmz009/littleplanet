@@ -29,6 +29,7 @@ clang++ $FLAGS "$OBJ"/*.o $("$SDLCFG" --static-libs) \
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/littleplanet.iconset
 cp build/littleplanet "$APP/Contents/MacOS/littleplanet"
 cp res/Info.plist "$APP/Contents/Info.plist"
+[ -f build/intro.mkv ] && cp build/intro.mkv "$APP/Contents/Resources/intro.mkv"   # the remastered opening
 if [ -d "$FF/lib" ]; then
   mkdir -p "$APP/Contents/Frameworks" "$APP/Contents/Resources/licenses"
   cp "$FF"/lib/*.dylib "$APP/Contents/Frameworks/"

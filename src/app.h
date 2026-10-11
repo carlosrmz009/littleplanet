@@ -72,6 +72,7 @@ UiResult ui_frame(bool in_game);
 void ui_set_preview_frames(const u32 *scene[2], const int scene_w[2], const s16 *audio, int audio_frames);
 void osd_message(const char *fmt, ...);
 void osd_draw(double fps);
+void osd_caption(const char *s, float alpha, Rect r);   // bottom-right corner of r
 
 // remastered opening (intro.c)
 void intro_reset(void);

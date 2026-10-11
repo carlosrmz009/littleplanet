@@ -24,5 +24,6 @@ void movie_close(void);
 bool movie_is_open(void);
 void movie_seek(double t);                  // t < 0: black and silence until 0
 double movie_time(void);
+void movie_gain(double g);                  // sound level (applied before 16-bit conversion)
 int movie_advance(double dt, s16 *out, int max);   // move the clock; returns that stretch of audio (stereo, 48 kHz)
 const MovieFrame *movie_frame(void);        // picture for the current time, NULL if none yet

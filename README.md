@@ -61,20 +61,15 @@ Saves (the Mega-CD's backup RAM) go to `backup_ram.bin` there. Uninstalling keep
 
 ### Remastered opening
 
-By default the opening animation is [LuanUP](https://www.youtube.com/@LuanUP)'s
+The opening animation is [LuanUP](https://www.youtube.com/@LuanUP)'s
 [4K 60 fps remaster](https://www.youtube.com/watch?v=O7ehCx2RC2A) of the Japanese opening, shown full screen (16:9)
-in place of the original FMV. It isn't included; to use it, download it once with [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-(which also needs [ffmpeg](https://ffmpeg.org/download.html) on your PATH) and put it in the data folder as `intro.mkv`:
-
-```bash
-yt-dlp -S "res:2160,fps,vcodec:vp9,acodec:opus" --merge-output-format mkv -o intro.mkv "https://www.youtube.com/watch?v=O7ehCx2RC2A"
-```
+in place of the original FMV and credited on screen while it plays. It ships with the game, with LuanUP's permission.
 
 The game's own FMV keeps running behind it (hidden and muted), so Start skips it, it plays again in the attract loop,
 and save states work as usual. The remaster is synced to the disc: its first frame lands on the frame the original
-shows its first picture, and it fades out where the animation ends (1:30). **Setup → Intro → Original** brings back
-the game's own opening. Playback uses a small LGPL build of [FFmpeg](https://ffmpeg.org) that ships with the game
-(VP9, H.264 and HEVC video; Opus and AAC sound).
+shows its first picture, and both end on the planet at the same moment (90.5 s). Its sound is brought down to the
+level of the game's CD music. **Setup → Intro → Original** brings back the game's own opening. Playback uses a small
+LGPL build of [FFmpeg](https://ffmpeg.org) that ships with the game.
 
 ### Extras
 
@@ -85,7 +80,7 @@ The setup menu has a live preview. Esc, Home or Select+Start opens it in game.
 | Filter | Sharp, Smooth, Scale4x, or CRT (grille/shadow/slot mask, scanlines, glow, curvature) |
 | Aspect | 4:3 (as on a TV), square pixels, 16:9 fill (blurred sides), 16:9 stretch |
 | Sound | Clean, or Accurate: adds the Model 1 Mega Drive's low-pass on FM and PSG (CD audio is never filtered) |
-| Intro | Remastered (LuanUP's 4K remaster, see above) or Original |
+| Intro | Remastered (LuanUP's 4K remaster, see above) or Original (the game's FMV) |
 | Controller | 3 button (default, what Sonic CD was made for) or 6 button |
 | Misc | Integer scaling, fullscreen, VSync, FPS counter, volume, fast-forward speed |
 
@@ -109,8 +104,8 @@ Remap anything under *Controls*. Xbox pads, DualShock 4 / DualSense, Switch Pro 
 **Linux:** Python 3, gcc/g++, SDL2, FreeType, DejaVu fonts. Packaging the AppImage also needs `appimagetool`.
 
 For the remastered opening, build FFmpeg once with `tools/build_ffmpeg.sh build/ffmpeg` (needs nasm; on Windows run it
-from an MSYS2 MINGW64 shell). The build scripts pick it up from `build/ffmpeg` and bundle it; without it the game
-builds and runs the same, with only the original opening.
+from an MSYS2 MINGW64 shell) and fetch the video with `tools/fetch_intro.sh`. The build scripts pick both up from
+`build/` and bundle them; without them the game builds and runs the same, with only the original opening.
 
 ```bash
 ./build_linux.sh      # or ./build_mac.sh, or build.bat
@@ -172,7 +167,7 @@ test disc (`tools/mktestdisc.py`). Every push to `main` refreshes the release.
 | Save states | yes, bit-exact |
 | Disassembly, matching rebuild | yes: all 112 executable files reassemble byte-identical |
 | Static recompiler | in progress |
-| Remastered opening (4K60, synced) | yes, with your own copy of the video |
+| Remastered opening (4K60, synced) | yes |
 
 ## Contributing
 
@@ -216,7 +211,7 @@ tools/               disctool, disassembler/assembler, test disc generator, FFmp
 
 [MIT](LICENSE) for the runtime, tools and installer. Third-party code keeps its own license (see `third_party/`);
 the bundled FFmpeg libraries are LGPL 2.1 (`tools/build_ffmpeg.sh` builds them from the unmodified release).
-The remastered opening is LuanUP's work and isn't distributed with the game.
+The remastered opening is LuanUP's work, included with their permission; it isn't covered by the MIT license.
 Nothing extracted from a disc is covered.
 
 Not affiliated with or endorsed by Sega. Sonic the Hedgehog and Sonic CD are trademarks of Sega.

@@ -1,0 +1,38 @@
+name: intro asset
+
+# One-off: publishes the remastered opening (LuanUP's 4K60 remaster, used with permission) as the asset
+# of the "intro" pre-release, where tools/fetch_intro.sh and the build pick it up.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: direct download URL of intro.mkv
+        required: true
+      sha256:
+        description: expected SHA-256
+        required: true
+        default: a71f65310c3902fc5284d5bdc22df8aab3b90479399d88b7c2de3257b49a1dd9
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: download
+        env:
+          URL: ${{ inputs.url }}
+          SHA: ${{ inputs.sha256 }}
+        run: |
+          curl -fL --retry 5 -o intro.mkv "$URL"
+          echo "$SHA  intro.mkv" | sha256sum -c -
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view intro >/dev/null 2>&1 || gh release create intro --prerelease --latest=false --title "Remastered opening" \
+            --notes "The remastered opening bundled with Little Planet: Sonic CD's Japanese opening in 4K 60 fps by LuanUP (https://www.youtube.com/@LuanUP), used with permission. Not a game release; get the game from the 1.0 release."
+          gh release upload intro intro.mkv --clobber

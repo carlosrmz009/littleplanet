@@ -114,6 +114,10 @@ if [ -d "$FF/lib" ]; then
   mkdir -p "$APPDIR/usr/lib"
   cp "$FF"/lib/* "$APPDIR/usr/lib/"
 fi
+if [ -f build/intro.mkv ]; then   # the remastered opening (tools/fetch_intro.sh)
+  mkdir -p "$APPDIR/usr/share/littleplanet"
+  cp build/intro.mkv "$APPDIR/usr/share/littleplanet/intro.mkv"
+fi
 for f in "$FT"/licenses/* build/sdl/licenses/* "$FF"/licenses/*; do
   if [ -f "$f" ]; then cp "$f" "$L/"; fi
 done

@@ -10,6 +10,7 @@ void movie_close(void) {}
 bool movie_is_open(void) { return false; }
 void movie_seek(double t) { (void)t; }
 double movie_time(void) { return 0; }
+void movie_gain(double g) { (void)g; }
 int movie_advance(double dt, s16 *out, int max) { (void)dt; (void)out; (void)max; return 0; }
 const MovieFrame *movie_frame(void) { return NULL; }
 #else
@@ -162,6 +163,7 @@ static double vtb, atb;               // stream time bases in seconds
 static AVFrame *vq[VQ]; static double vq_t[VQ]; static int vq_head, vq_n;
 static s16 ab[AB * 2]; static s64 ab_rd, ab_wr;   // absolute sample indices at 48 kHz
 static bool quit, eof, seek_req; static double seek_t;
+static float gain = 1;
 static double clock_t_;               // movie time, owned by the caller's thread
 static s64 clock_s;                   // samples handed out so far (absolute index of the next one)
 static AVFrame *cur; static MovieFrame mf; static u32 serial;
@@ -178,10 +180,10 @@ static void queue_clear(void) {
 static void audio_out(AVFrame *f) {
   if (!swr) {
     AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
-    if (f_swr_alloc_set_opts2(&swr, &stereo, AV_SAMPLE_FMT_S16, MOVIE_RATE, &f->ch_layout, (enum AVSampleFormat)f->format,
+    if (f_swr_alloc_set_opts2(&swr, &stereo, AV_SAMPLE_FMT_FLT, MOVIE_RATE, &f->ch_layout, (enum AVSampleFormat)f->format,
                               f->sample_rate, 0, NULL) < 0 || f_swr_init(swr) < 0) { f_swr_free(&swr); return; }
   }
-  static s16 tmp[MOVIE_RATE * 2];
+  static float tmp[MOVIE_RATE * 2];
   u8 *o = (u8 *)tmp;
   int n = f_swr_convert(swr, &o, MOVIE_RATE, (const u8 **)f->extended_data, f->nb_samples);
   if (n <= 0) return;
@@ -196,7 +198,10 @@ static void audio_out(AVFrame *f) {
   }
   for (int i = 0; i < n; i++) {
     s64 k = slot(ab_wr);
-    ab[k * 2] = tmp[i * 2]; ab[k * 2 + 1] = tmp[i * 2 + 1];
+    for (int c = 0; c < 2; c++) {   // gain before going to 16 bits, so loud masters don't clip
+      float v = tmp[i * 2 + c] * gain * 32767.0f;
+      ab[k * 2 + c] = (s16)lrintf(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+    }
     ab_wr++;
     if (ab_wr - ab_rd > AB) ab_rd = ab_wr - AB;
   }
@@ -334,6 +339,7 @@ void movie_seek(double t) {
 }
 
 double movie_time(void) { return clock_t_; }
+void movie_gain(double g) { gain = (float)g; }
 
 int movie_advance(double dt, s16 *out, int max) {
   if (!fmt) return 0;
