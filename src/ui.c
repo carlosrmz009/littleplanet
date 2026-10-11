@@ -19,6 +19,10 @@ static int scene = -1;
 static u32 *pv_big;
 const s16 *preview_clip(int accurate);
 
+// the Intro setting shows one still of each opening at the same moment, to compare
+static const u32 *istill[2]; static int istill_w[2], istill_h[2];
+void ui_set_intro_still(int which, const u32 *pix, int w, int h) { istill[which] = pix; istill_w[which] = w; istill_h[which] = h; }
+
 void ui_set_preview_frames(const u32 *scene[2], const int scene_w[2], const s16 *audio, int audio_frames) {
   for (int i = 0; i < 2; i++) { sc[i] = scene[i]; sc_w[i] = scene_w[i]; }
   (void)audio;
@@ -58,7 +62,7 @@ static void build_items(bool in_game) {
   ADD("VSync", IT_CHOICE, &cfg.vsync, 0, 1, 1, onoff, "No tearing.", -1, 0);
   ADD("Show FPS", IT_CHOICE, &cfg.show_fps, 0, 1, 1, onoff, "Frame counter in the corner.", -1, 0);
   ADD("Fast-forward", IT_SLIDER, &cfg.ff_speed, 2, 8, 1, NULL, "Speed while holding Tab.", -1, 0);
-  ADD("Intro", IT_CHOICE, &cfg.intro, 0, 1, 1, intros, cfg.intro == INTRO_REMASTERED ? intro_status() : "The game's own opening.", -1, 0);
+  ADD("Intro", IT_CHOICE, &cfg.intro, 0, 1, 1, intros, cfg.intro == INTRO_REMASTERED ? intro_status() : "The game's own opening.", -3, 0);
   ADD("Controller", IT_CHOICE, &cfg.six_button, 0, 1, 1, pads, "Sonic CD was made for the 3 button pad.", -1, 0);
   ADD("Controls", IT_ACTION, NULL, 0, 0, 0, NULL, "Remap keys and pads.", -1, A_CONTROLS);
   if (in_game) ADD("Reset", IT_ACTION, NULL, 0, 0, 0, NULL, "Restart from power-on. Your save is kept.", -1, A_RESET);
@@ -136,7 +140,7 @@ static void draw_settings(bool in_game) {
   const char *k[5], *a[5]; int n = 0;
   for (int i = 0; i < 5; i++) {
     if (i == 3 && !in_game) continue;
-    if (i == 4 && items[sel].scene == -2) continue;
+    if (i == 4 && items[sel].scene < -1) continue;
     k[n] = keys[i]; a[n++] = acts[i];
   }
   const char *right = in_game ? NULL : update_label();
@@ -278,14 +282,24 @@ UiResult ui_frame(bool in_game) {
   } else {
     draw_settings(in_game);
     if (in_game) art_paused();
-    if (sc[0]) ir = art_inset(pr);
+    if (items[sel].scene == -3) { if (!istill[0]) art_note(pr, "Warming up\xe2\x80\xa6"); }
+    else if (sc[0]) ir = art_inset(pr);
     else art_note(pr, "Warming up\xe2\x80\xa6");
   }
   ubtn = art_band_button();
   video_clear(1, 1, 1);
   video_draw_rgba(ui_px, ui_w, ui_h, (Rect){ 0, 0, ui_w, ui_h }, false);
 
-  if (page == 0 && sc[0]) {
+  if (page == 0 && items[sel].scene == -3) {
+    // a still of the chosen intro: the remaster fills the monitor's width at 16:9, the FMV is drawn like the game
+    if (cfg.intro == INTRO_REMASTERED && istill[1]) {
+      int h = pr.w * istill_h[1] / istill_w[1];
+      video_draw_rgba(istill[1], istill_w[1], istill_h[1], (Rect){ pr.x, pr.y + (pr.h - h) / 2, pr.w, h }, false);
+    } else if (istill[0]) {
+      video_upload_game(istill[0], istill_w[0], istill_h[0]);
+      video_draw_game(&cfg, pr, 0, 0, 1, 1);
+    }
+  } else if (page == 0 && sc[0]) {
     int s = scene >= 0 ? scene : (items[sel].scene == 1 ? 1 : 0);
     if (cfg.filter == FILT_PIXELART) {
       if (!pv_big) pv_big = malloc(GAME_W * 4 * GAME_H * 4 * 4);

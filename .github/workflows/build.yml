@@ -66,15 +66,20 @@ jobs:
           build\lp.exe --version > build\version.txt
           type build\version.txt
           findstr /c:"Little Planet" build\version.txt || exit /b 1
-          build\lp.exe --movie-check > build\movie.txt
-          type build\movie.txt
-          findstr /c:"ffmpeg ok" build\movie.txt || exit /b 1
           build\lp.exe --rc-info || exit /b 1
           python -c "import os,sys; n=os.path.getsize('build/littleplanet.exe'); print('installer', n); sys.exit(n < 150000000)" || exit /b 1
           python -c "import os,sys; n=os.path.getsize('build/uninst.exe'); print('uninstaller', n); sys.exit(n > 5000000)" || exit /b 1
           build\lp.exe --frames 120 --hashlog build\h1.txt build\test.iso
           build\lp.exe --frames 120 --hashlog build\h2.txt build\test.iso
           fc build\h1.txt build\h2.txt || exit /b 1
+      - name: ffmpeg loads with only Windows' own DLLs
+        shell: cmd
+        env:
+          PATH: C:\Windows\System32;C:\Windows
+        run: |
+          build\lp.exe --movie-check > build\movie.txt
+          type build\movie.txt
+          findstr /c:"ffmpeg ok" build\movie.txt || exit /b 1
       - uses: actions/upload-artifact@v4
         with:
           name: littleplanet-windows

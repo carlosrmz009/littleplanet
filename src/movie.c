@@ -13,6 +13,7 @@ double movie_time(void) { return 0; }
 void movie_gain(double g) { (void)g; }
 int movie_advance(double dt, s16 *out, int max) { (void)dt; (void)out; (void)max; return 0; }
 const MovieFrame *movie_frame(void) { return NULL; }
+bool movie_grab(const char *path, double t, u32 *out, int w, int h) { (void)path; (void)t; (void)out; (void)w; (void)h; return false; }
 #else
 
 #include <libavformat/avformat.h>
@@ -282,6 +283,78 @@ static AVCodecContext *open_dec(int s, bool video) {
   if (video) { c->thread_count = 0; c->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE; }
   if (f_avcodec_open2(c, codec, NULL) < 0) { f_avcodec_free_context(&c); return NULL; }
   return c;
+}
+
+// one picture at time t, scaled to w x h XRGB (a still for the menu); separate from playback
+bool movie_grab(const char *path, double t, u32 *out, int w, int h) {
+  if (!movie_available()) return false;
+  AVFormatContext *gf = NULL;
+  if (f_avformat_open_input(&gf, path, NULL, NULL) < 0) return false;
+  f_avformat_find_stream_info(gf, NULL);
+  int s = -1;
+  for (unsigned i = 0; i < gf->nb_streams; i++)
+    if (gf->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && !(gf->streams[i]->disposition & AV_DISPOSITION_ATTACHED_PIC)) { s = i; break; }
+  bool ok = false;
+  AVCodecContext *c = NULL;
+  const AVCodec *codec = s >= 0 ? f_avcodec_find_decoder(gf->streams[s]->codecpar->codec_id) : NULL;
+  if (codec && (c = f_avcodec_alloc_context3(codec))) {
+    f_avcodec_parameters_to_context(c, gf->streams[s]->codecpar);
+    c->thread_count = 0;
+    if (f_avcodec_open2(c, codec, NULL) >= 0) {
+      double tb = av_q2d(gf->streams[s]->time_base);
+      s64 ts = (s64)(t * AV_TIME_BASE);
+      f_avformat_seek_file(gf, -1, INT64_MIN, ts, ts, 0);
+      AVPacket *p = f_av_packet_alloc();
+      AVFrame *f = f_av_frame_alloc();
+      bool got = false, eof = false;
+      while (!got) {
+        if (!eof) {
+          if (f_av_read_frame(gf, p) < 0) { eof = true; f_avcodec_send_packet(c, NULL); }
+          else { if (p->stream_index == s) f_avcodec_send_packet(c, p); f_av_packet_unref(p); }
+        }
+        while (!got && f_avcodec_receive_frame(c, f) >= 0) {
+          s64 pts = f->best_effort_timestamp != AV_NOPTS_VALUE ? f->best_effort_timestamp : f->pts;
+          if (pts != AV_NOPTS_VALUE && pts * tb + 0.008 < t) { f_av_frame_unref(f); continue; }
+          got = true;
+        }
+        if (eof && !got) break;
+      }
+      const AVPixFmtDescriptor *d = got ? f_av_pix_fmt_desc_get((enum AVPixelFormat)f->format) : NULL;
+      if (d && d->nb_components >= 3 && (d->flags & AV_PIX_FMT_FLAG_PLANAR) && !(d->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_HWACCEL | AV_PIX_FMT_FLAG_BE))) {
+        int depth = d->comp[0].depth, sh = depth - 8;
+        bool full = f->color_range == AVCOL_RANGE_JPEG, bt709 = f->colorspace == AVCOL_SPC_BT709 || (f->colorspace == AVCOL_SPC_UNSPECIFIED && f->height >= 720);
+        for (int y = 0; y < h; y++)
+          for (int x = 0; x < w; x++) {
+            int sx = (int)((x + 0.5) * f->width / w), sy = (int)((y + 0.5) * f->height / h);
+            int cx = sx >> d->log2_chroma_w, cy = sy >> d->log2_chroma_h;
+            float Y, U, V;
+            if (depth > 8) {
+              Y = (float)(((const u16 *)(f->data[0] + (size_t)sy * f->linesize[0]))[sx] >> sh);
+              U = (float)(((const u16 *)(f->data[1] + (size_t)cy * f->linesize[1]))[cx] >> sh);
+              V = (float)(((const u16 *)(f->data[2] + (size_t)cy * f->linesize[2]))[cx] >> sh);
+            } else {
+              Y = f->data[0][(size_t)sy * f->linesize[0] + sx];
+              U = f->data[1][(size_t)cy * f->linesize[1] + cx];
+              V = f->data[2][(size_t)cy * f->linesize[2] + cx];
+            }
+            float yy = Y / 255, u = U / 255 - 0.5f, v = V / 255 - 0.5f;
+            if (!full) { yy = (yy - 16.0f / 255) * (255.0f / 219); u *= 255.0f / 224; v *= 255.0f / 224; }
+            float r = bt709 ? yy + 1.5748f * v : yy + 1.402f * v;
+            float g = bt709 ? yy - 0.1873f * u - 0.4681f * v : yy - 0.3441f * u - 0.7141f * v;
+            float b = bt709 ? yy + 1.8556f * u : yy + 1.772f * u;
+            int ri = (int)(r * 255 + 0.5f), gi = (int)(g * 255 + 0.5f), bi = (int)(b * 255 + 0.5f);
+            ri = ri < 0 ? 0 : ri > 255 ? 255 : ri; gi = gi < 0 ? 0 : gi > 255 ? 255 : gi; bi = bi < 0 ? 0 : bi > 255 ? 255 : bi;
+            out[(size_t)y * w + x] = 0xff000000u | (u32)ri << 16 | (u32)gi << 8 | (u32)bi;
+          }
+        ok = true;
+      }
+      f_av_frame_free(&f);
+      f_av_packet_free(&p);
+    }
+    f_avcodec_free_context(&c);
+  }
+  f_avformat_close_input(&gf);
+  return ok;
 }
 
 bool movie_open(const char *path) {

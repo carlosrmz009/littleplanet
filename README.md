@@ -77,7 +77,7 @@ Saves (the Mega-CD's backup RAM) go to `backup_ram.bin` there. Uninstalling keep
 
 The opening animation is [LuanUP](https://www.youtube.com/@LuanUP)'s
 [4K 60 fps remaster](https://www.youtube.com/watch?v=O7ehCx2RC2A) of the Japanese opening, shown full screen (16:9)
-in place of the original FMV and credited on screen while it plays. It ships with the game. (Thanks, LuanUP!)
+in place of the original FMV, with a credit on screen as it starts. It ships with the game. (Thanks, LuanUP!)
 
 **Setup → Intro → Original** brings back the game's own opening. Playback uses a small
 LGPL build of [FFmpeg](https://ffmpeg.org) that ships with the game.

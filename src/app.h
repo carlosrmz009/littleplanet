@@ -70,6 +70,7 @@ typedef enum { UI_NONE, UI_START_GAME, UI_RESUME, UI_QUIT, UI_RESET } UiResult;
 void ui_init(void);
 UiResult ui_frame(bool in_game);
 void ui_set_preview_frames(const u32 *scene[2], const int scene_w[2], const s16 *audio, int audio_frames);
+void ui_set_intro_still(int which, const u32 *pix, int w, int h);   // 0 the game's FMV, 1 the remaster
 void osd_message(const char *fmt, ...);
 void osd_draw(double fps);
 void osd_caption(const char *s, float alpha, Rect r);   // bottom-right corner of r
@@ -80,6 +81,7 @@ bool intro_step(double dt, s16 *audio, int *frames, int max);   // after each em
 bool intro_active(void);
 void intro_draw(Rect r);
 const char *intro_status(void);
+bool intro_still(u32 *out, int w, int h);   // the remaster at the comparison moment
 
 void audio_play_clip(const s16 *pcm, int frames);
 void audio_stop_clip(void);

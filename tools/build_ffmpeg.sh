@@ -54,7 +54,8 @@ case "$(uname -s)" in
       lipo -create "$WORK/arm64/stage/lib/$f" "$WORK/x86_64/stage/lib/$f" -output "$OUT/lib/$f"
     done ;;
   MINGW*|MSYS*)
-    build "$WORK/win" --target-os=mingw32 --enable-w32threads --extra-ldflags=-static-libgcc
+    # -static: the MinGW runtime (libgcc, libwinpthread) goes inside the DLLs; players' PCs don't have it
+    build "$WORK/win" --target-os=mingw32 --enable-w32threads --extra-ldflags=-static
     cp -R "$WORK/win/stage/include" "$OUT/include"
     mkdir -p "$OUT/bin"
     cp "$WORK/win/stage/bin/"*.dll "$OUT/bin/" ;;

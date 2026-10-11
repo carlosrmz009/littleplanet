@@ -15,8 +15,9 @@
 #define FADE 0.1                // (the original's last picture is at 90.47 s too); the subscribe card after it never shows
 #define GAIN 0.355              // -9 dB: the remaster is mastered 9 dB hotter than the game's CD music (-21.6 dB RMS)
 #define CREDIT "remastered FMV by @LuanUP on YT"   // shown while it plays (LuanUP's condition for using it)
-#define CREDIT_FROM 0.5         // seconds of movie time
-#define CREDIT_TO 8.5
+#define CREDIT_FROM 0.5         // seconds of movie time: it appears here,
+#define CREDIT_HOLD 1.5         // stays this long,
+#define CREDIT_FADE 0.5         // then fades out over this
 
 static const char *files[] = { "intro.mkv", "intro.webm", "intro.mp4" };
 static u32 opn_lba, opn_end;
@@ -75,6 +76,12 @@ void intro_reset(void) {
 
 bool intro_active(void) { return active; }
 
+// the remaster at the moment the menu compares (1 s in, the opening's first wide shot)
+bool intro_still(u32 *out, int w, int h) {
+  const char *p = find_file();
+  return p && movie_grab(p, 1.0, out, w, h);
+}
+
 static bool ensure_open(void) {
   if (movie_is_open()) return true;
   if (tried) return false;
@@ -116,7 +123,8 @@ void intro_draw(Rect r) {
   const MovieFrame *f = movie_frame();
   float fade = t > MOVIE_END - FADE ? (float)((MOVIE_END - t) / FADE) : 1.0f;
   if (f) video_draw_movie(f, r, fade);
-  double c = t < CREDIT_FROM || t > CREDIT_TO ? 0 : fmin(fmin(t - CREDIT_FROM, CREDIT_TO - t) / 0.5, 1.0);
+  double end = CREDIT_FROM + CREDIT_HOLD;
+  double c = t < CREDIT_FROM ? 0 : t <= end ? 1 : fmax(0, 1 - (t - end) / CREDIT_FADE);
   if (f && c > 0) {   // inside the picture, not on the bars around it
     double par = (double)f->w / f->h;
     int w = r.w, h = (int)(r.w / par + 0.5);

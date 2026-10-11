@@ -53,6 +53,13 @@ static void audio_drain(void) { s16 junk[8192]; while (audio_fetch(junk, 4096) >
 // Boots the game once in the background: the title screen and a moment of Palmtree Panic
 // become the two preview scenes, and a few seconds of title music the sound sample.
 static u32 *pv[2]; static int pv_w[2];
+// stills of the two intros at the same moment, for the Intro setting: the game's FMV (emulated, cached)
+// and the remaster (decoded from the video at each launch)
+#define PV_INTRO_FRAME 1439   // 1 s after the FMV's first picture, booting with no input (the attract loop)
+#define RM_W 640
+#define RM_H 360
+static u32 *pv_intro, *pv_rm; static int pv_intro_w;
+static volatile LONG rm_ready;
 static s16 *pvclip[2];
 static volatile LONG preview_ready;
 #define PV_CLIP_START 240
@@ -64,22 +71,26 @@ const s16 *preview_clip(int accurate) { return pvclip[accurate ? 0 : 1]; }
 
 static void pv_alloc(void) {
   for (int s = 0; s < 2; s++) { pv[s] = calloc(GAME_W * GAME_H, 4); pvclip[s] = calloc(PV_CLIP_FRAMES * 2, 2); }
+  pv_intro = calloc(GAME_W * GAME_H, 4); pv_rm = calloc(RM_W * RM_H, 4);
 }
 static bool pv_load_cache(void) {
   FILE *f = fopen(PV_CACHE, "rb"); if (!f) return false;
-  u32 magic = 0; bool ok = fread(&magic, 4, 1, f) == 1 && magic == 0x3150504c;
+  u32 magic = 0; bool ok = fread(&magic, 4, 1, f) == 1 && magic == 0x3250504c;
   for (int s = 0; s < 2 && ok; s++) {
     ok = fread(&pv_w[s], 4, 1, f) == 1 && pv_w[s] > 0 && pv_w[s] <= GAME_W;
     ok = ok && fread(pv[s], 4, GAME_W * GAME_H, f) == GAME_W * GAME_H;
     ok = ok && fread(pvclip[s], 4, PV_CLIP_FRAMES, f) == PV_CLIP_FRAMES;
   }
+  ok = ok && fread(&pv_intro_w, 4, 1, f) == 1 && pv_intro_w > 0 && pv_intro_w <= GAME_W;
+  ok = ok && fread(pv_intro, 4, GAME_W * GAME_H, f) == GAME_W * GAME_H;
   fclose(f);
   return ok;
 }
 static void pv_save_cache(void) {
   FILE *f = fopen(PV_CACHE, "wb"); if (!f) return;
-  u32 magic = 0x3150504c; fwrite(&magic, 4, 1, f);
+  u32 magic = 0x3250504c; fwrite(&magic, 4, 1, f);
   for (int s = 0; s < 2; s++) { fwrite(&pv_w[s], 4, 1, f); fwrite(pv[s], 4, GAME_W * GAME_H, f); fwrite(pvclip[s], 4, PV_CLIP_FRAMES, f); }
+  fwrite(&pv_intro_w, 4, 1, f); fwrite(pv_intro, 4, GAME_W * GAME_H, f);
   fclose(f);
 }
 static u16 pv_pad(int f) {
@@ -115,8 +126,22 @@ static int pv_thread(void *arg) {
   }
   audio_dual = false;
   audio_lowpass = was;
+  // again with no input: the attract loop reaches the opening FMV
+  if (machine_start(disc_path, err, sizeof err))
+    for (int f = 0; f <= PV_INTRO_FRAME; f++) {
+      io_set_pad(0, 0);
+      mcd_run_frame();
+      while (audio_fetch(tmp, 4096) > 0) {}
+      if (f == PV_INTRO_FRAME) { int w, h; game_picture(pic, &w, &h); pv_intro_w = w; memcpy(pv_intro, pic, (size_t)w * GAME_H * 4); }
+    }
   pv_save_cache();
   InterlockedExchange(&preview_ready, 1);
+  return 0;
+}
+
+static int rm_thread(void *arg) {   // the remaster's still: decoding a 4K frame takes a moment
+  (void)arg;
+  if (intro_still(pv_rm, RM_W, RM_H)) InterlockedExchange(&rm_ready, 1);
   return 0;
 }
 
@@ -250,6 +275,9 @@ int app_run(const char *disc) {
   void *th = NULL;
   if (pv_load_cache()) preview_ready = 1;
   else th = plat_thread(pv_thread);
+  movie_available();   // load FFmpeg here, before another thread can ask
+  void *rm_th = plat_thread(rm_thread);
+  bool rm_shown = false;
 
   enum { M_MENU, M_GAME } mode = M_MENU;
   bool in_game = false, paused = false;
@@ -268,8 +296,10 @@ int app_run(const char *disc) {
     if (!ui_was_ready && preview_ready) {
       const u32 *a[2] = {pv[0], pv[1]};
       ui_set_preview_frames(a, pv_w, pvclip[0], PV_CLIP_FRAMES);
+      ui_set_intro_still(0, pv_intro, pv_intro_w, GAME_H);
       ui_was_ready = true;
     }
+    if (!rm_shown && rm_ready) { ui_set_intro_still(1, pv_rm, RM_W, RM_H); rm_shown = true; }
     bool fsk = input_key(VK_F11); if (fsk && !k_fs) set_fullscreen(!is_fullscreen); k_fs = fsk;
     if ((bool)cfg.fullscreen != is_fullscreen) set_fullscreen(cfg.fullscreen);
     if (!th) audio_lowpass = cfg.sound == SOUND_ACCURATE;
@@ -358,6 +388,7 @@ int app_run(const char *disc) {
     if (!frames && !cfg.vsync) Sleep(1);
   }
   if (th) plat_join(th);
+  if (rm_th) plat_join(rm_th);
   cfg_save("littleplanet.ini");
   if (in_game && !uitest_prefix) bram_flush();
   return 0;

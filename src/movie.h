@@ -27,3 +27,4 @@ double movie_time(void);
 void movie_gain(double g);                  // sound level (applied before 16-bit conversion)
 int movie_advance(double dt, s16 *out, int max);   // move the clock; returns that stretch of audio (stereo, 48 kHz)
 const MovieFrame *movie_frame(void);        // picture for the current time, NULL if none yet
+bool movie_grab(const char *path, double t, u32 *out, int w, int h);   // one picture at t as w x h XRGB (separate from playback)
