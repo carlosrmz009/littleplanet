@@ -15,6 +15,7 @@ OBJ=build/obj/mac
 APP="build/Little Planet.app"
 rm -rf "$OBJ" "$APP" build/littleplanet.iconset build/dmg
 mkdir -p "$OBJ" build/gen
+python3 -I tools/embed_fonts.py build/gen/ui_fonts.c
 [ -f build/gen/build_id.c ] || printf 'const char build_id[] = "%s";\n' "$BUILD_ID" > build/gen/build_id.c
 export CFLAGS CXXFLAGS OBJ
 

@@ -5,6 +5,7 @@ if not exist build mkdir build
 if not exist build\gen mkdir build\gen
 if not exist build\obj mkdir build\obj
 if not exist build\obj\inst mkdir build\obj\inst
+python -I tools\embed_fonts.py build\gen\ui_fonts.c || exit /b 1
 if not exist build\gen\build_id.c echo const char build_id[] = "%BUILD_ID%";> build\gen\build_id.c
 set MOVIE=
 if exist build\ffmpeg\include set MOVIE=/DLP_MOVIE /Ibuild\ffmpeg\include
@@ -28,6 +29,6 @@ rc /nologo /fobuild\obj\game.res res\game.rc || exit /b 1
 cl /nologo /O2 /W3 /MP /wd4244 /wd4996 /wd4146 /wd4102 /wd4267 /wd4305 /wd4018 /D_CRT_SECURE_NO_WARNINGS /Isrc %CHD% %MOVIE% /DLP_RECOMP /EHsc /Fobuild\obj\ /Febuild\lp.exe src\*.c src\fm.cpp third_party\chd.c third_party\ymfm\ymfm_opn.cpp third_party\ymfm\ymfm_ssg.cpp third_party\ymfm\ymfm_adpcm.cpp build\gen\*.c %RC%\obj\*.obj build\obj\game.res %* /link /subsystem:windows /entry:mainCRTStartup || exit /b 1
 if not exist build\obj\uninst mkdir build\obj\uninst
 rc /nologo /fobuild\obj\uninst.res installer\uninst.rc || exit /b 1
-cl /nologo /O2 /W3 /wd4996 /D_CRT_SECURE_NO_WARNINGS /Fobuild\obj\uninst\ /Febuild\uninst.exe installer\littleplanet.c src\gfx.c build\obj\uninst.res /link /subsystem:windows || exit /b 1
+cl /nologo /O2 /W3 /wd4996 /D_CRT_SECURE_NO_WARNINGS /Isrc /Fobuild\obj\uninst\ /Febuild\uninst.exe installer\littleplanet.c src\gfx.c src\vg.c build\gen\ui_fonts.c build\obj\uninst.res /link /subsystem:windows || exit /b 1
 rc /nologo /fobuild\obj\littleplanet.res installer\littleplanet.rc || exit /b 1
-cl /nologo /O2 /W3 /wd4996 /D_CRT_SECURE_NO_WARNINGS /Fobuild\obj\inst\ /Febuild\littleplanet.exe installer\littleplanet.c src\gfx.c build\obj\littleplanet.res /link /subsystem:windows || exit /b 1
+cl /nologo /O2 /W3 /wd4996 /D_CRT_SECURE_NO_WARNINGS /Isrc /Fobuild\obj\inst\ /Febuild\littleplanet.exe installer\littleplanet.c src\gfx.c src\vg.c build\gen\ui_fonts.c build\obj\littleplanet.res /link /subsystem:windows || exit /b 1

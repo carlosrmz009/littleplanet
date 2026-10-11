@@ -3,15 +3,8 @@ set -e
 cd "$(dirname "$0")"
 SDLCFG="${SDLCFG:-$PWD/build/sdl/bin/sdl2-config}"
 [ -x "$SDLCFG" ] || SDLCFG=sdl2-config
-FT="${FT:-$PWD/build/ft}"
-FONTS="${FONTS:-/usr/share/fonts/truetype/dejavu}"
 CC="${CC:-gcc}"
 CXX="${CXX:-g++}"
-if [ -d "$FT" ]; then
-  FTC="-I$FT/include/freetype2" FTL="$FT/lib/libfreetype.a"
-else
-  FTC="$(pkg-config --cflags freetype2)" FTL="$(pkg-config --libs freetype2)"
-fi
 # FFmpeg for the remastered opening: build/ffmpeg (tools/build_ffmpeg.sh, bundled) or the system's headers
 FF="${FF:-$PWD/build/ffmpeg}"
 MOVIE=""
@@ -20,18 +13,19 @@ elif pkg-config --exists libavformat libavcodec libavutil libswresample 2>/dev/n
   MOVIE="-DLP_MOVIE $(pkg-config --cflags libavformat libavcodec libavutil libswresample)"
 fi
 CHD="-Ithird_party/libchdr/include -Ithird_party/libchdr/deps/lzma-26.02/include -Ithird_party/libchdr/deps/miniz-3.1.2 -Ithird_party/libchdr/deps/zstd-1.5.7"
-CFLAGS="-O2 -Isrc $("$SDLCFG" --cflags) $FTC $CHD $MOVIE"
+CFLAGS="-O2 -Isrc $("$SDLCFG" --cflags) $CHD $MOVIE"
 CXXFLAGS="-O2 -std=c++14"
 OBJ=build/obj/linux
 APPDIR=build/AppDir
 rm -rf "$OBJ" "$APPDIR" build/littleplanet-linux*.AppImage
 mkdir -p "$OBJ" build/gen
+python3 -I tools/embed_fonts.py build/gen/ui_fonts.c
 [ -f build/gen/build_id.c ] || printf 'const char build_id[] = "%s";\n' "$BUILD_ID" > build/gen/build_id.c
 export CC CXX CFLAGS CXXFLAGS OBJ
 
-python3 - "$FONTS" res/littleplanet.ico <<'EOF'
+python3 - res/littleplanet.ico <<'EOF'
 import struct, sys, zlib
-fonts, ico = sys.argv[1:3]
+ico = sys.argv[1]
 d = open(ico, 'rb').read()
 ents = [struct.unpack('<BBBBHHII', d[6 + 16 * i:22 + 16 * i]) for i in range(struct.unpack('<H', d[4:6])[0])]
 size = lambda e: e[0] or 256
@@ -76,8 +70,6 @@ def arr(name, b):
 
 w, px = rgba(data(small))
 src = arr('icon_png', data(big)) + arr('icon_rgba', px) + 'const unsigned icon_size = %d;\n' % w
-for name, f in (('font_bold', 'DejaVuSansCondensed-Bold.ttf'), ('font_oblique', 'DejaVuSansCondensed-Oblique.ttf'), ('font_logo', 'DejaVuSans-BoldOblique.ttf')):
-    src += arr(name, open(fonts + '/' + f, 'rb').read())
 open('build/res.c', 'w').write(src)
 EOF
 
@@ -95,7 +87,7 @@ for f in "$RC"/*.c; do [ -f "$RC/obj/$(basename "$f" .c).o" ] || echo "$f"; done
   xargs -P "$(nproc)" -I{} sh -c 'o="$1/obj/$(basename "$2" .c).o"; $CC -O2 -Isrc -I"$1" -c "$2" -o "$o.tmp" && mv "$o.tmp" "$o"' sh "$RC" {}
 $CC $CFLAGS -DLP_RECOMP -c src/recomp.c -o "$OBJ/src_recomp.c.o"
 
-$CXX "$OBJ"/*.o "$RC"/obj/*.o $("$SDLCFG" --static-libs) $FTL -lGL -lm -ldl -lpthread -o build/littleplanet
+$CXX "$OBJ"/*.o "$RC"/obj/*.o $("$SDLCFG" --static-libs) -lGL -lm -ldl -lpthread -o build/littleplanet
 
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/licenses/littleplanet"
 cp build/littleplanet "$APPDIR/usr/bin/littleplanet"
@@ -114,7 +106,7 @@ Categories=Game;ActionGame;
 StartupWMClass=littleplanet
 EOF
 L="$APPDIR/usr/share/licenses/littleplanet"
-cp /usr/share/doc/fonts-dejavu-core/copyright "$L/DejaVu.txt" 2>/dev/null || true
+cp res/fonts/OFL-Archivo.txt res/fonts/OFL-DelaGothic.txt "$L/"
 cp third_party/libchdr/LICENSE.txt "$L/libchdr.txt"
 cp third_party/ymfm/LICENSE "$L/ymfm.txt"
 cp third_party/dr_libs/LICENSE "$L/dr_libs.txt"
@@ -127,7 +119,7 @@ if [ -f build/intro.mkv ]; then   # the remastered opening (tools/fetch_intro.sh
   mkdir -p "$APPDIR/usr/share/littleplanet"
   cp build/intro.mkv "$APPDIR/usr/share/littleplanet/intro.mkv"
 fi
-for f in "$FT"/licenses/* build/sdl/licenses/* "$FF"/licenses/*; do
+for f in build/sdl/licenses/* "$FF"/licenses/*; do
   if [ -f "$f" ]; then cp "$f" "$L/"; fi
 done
 

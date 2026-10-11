@@ -1,10 +1,16 @@
 #include "app.h"
+#include "ui_art.h"
+#include "vg.h"
 #include <stdarg.h>
+#include <math.h>
 
-static int px = 1;
-static void canvas_ensure(int ww, int wh) {
-  px = wh / 240 > 1 ? wh / 240 : 1;
-  gfx_canvas((ww + px - 1) / px, (wh + px - 1) / px);
+// the window-sized picture the menu is drawn into, and the background cached for it
+static u32 *ui_px, *ui_bg; static int ui_w, ui_h, bg_key = -1;
+static void canvas_ensure(int w, int h) {
+  if (w == ui_w && h == ui_h && ui_px) return;
+  free(ui_px); free(ui_bg);
+  ui_px = malloc((size_t)w * h * 4); ui_bg = malloc((size_t)w * h * 4);
+  ui_w = w; ui_h = h; bg_key = -1;
 }
 
 static const u32 *sc[2]; static int sc_w[2];
@@ -94,82 +100,83 @@ static bool nav(int vk, u32 pm, Nav *n) {
   return false;
 }
 
-#define TOP 30
-static int list_w(void) { return cw * 46 / 100; }
-static int row_h(void) { int h = (ch - TOP - 24) / nitems; return h > 15 ? 15 : h; }
-static Rect comm_rect(void) { int x = list_w() + 12; return (Rect){ x, ch - 52, cw - x - 6, 36 }; }
-static Rect preview_rect(void) {
-  int x = list_w() + 16, y = TOP + 10, w = cw - x - 10, h = comm_rect().y - 10 - y;
-  if (h > w * 3 / 4) h = w * 3 / 4;
-  return (Rect){ x, y, w, h };
+#define LIST_Y 296.0f
+#define LIST_BOTTOM 722.0f
+static float row_h(int n) { float h = (LIST_BOTTOM - LIST_Y) / n; return h > 30 ? 30 : h; }
+static float sel_anim = -1; static double anim_t;
+static float slide(float target) {   // the selection slab slides to the new row
+  double t = plat_time(), dt = anim_t ? t - anim_t : 0;
+  anim_t = t;
+  if (sel_anim < 0 || fabsf(sel_anim - target) > 6) sel_anim = target;
+  float k = (float)(dt * 22); if (k > 1) k = 1;
+  sel_anim += (target - sel_anim) * k;
+  if (fabsf(sel_anim - target) < 0.01f) sel_anim = target;
+  return sel_anim;
 }
 
 static void draw_settings(bool in_game) {
-  int x0 = 6, lw = list_w(), lh = row_h(), y = TOP + 10;
-  panel(x0, TOP + 4, lw, nitems * lh + 12, C_PANEL, C_EDGE);
-  tab(x0 + 8, TOP - 2, in_game ? "PAUSED" : "SETUP");
-  int vx = x0 + lw * 52 / 100, vw = lw - (vx - x0) - 6;
+  static ArtRow rows[32]; static char vals[32][32];
   for (int i = 0; i < nitems; i++) {
     Item *it = &items[i];
-    bool en = item_enabled(it), s = i == sel;
-    if (s || i == hover) fill(x0 + 2, y, lw - 4, lh - 1, s ? C_ROW : RGB(44, 54, 128));
-    if (s) sparkle(x0 + 9, y + lh / 2);
-    text(x0 + 17, y + (lh - 13) / 2, f_item, !en ? C_DIM : s ? C_SEL : C_TEXT, it->label);
-    if (it->val) {
-      Rect v = { vx, y + 2, vw, lh - 4 };
-      fill(v.x, v.y, v.w, v.h, C_INSET);
-      COLORREF c = en ? C_LCD : C_DIM;
-      if (it->type == IT_SLIDER && it->val != &cfg.ff_speed) {
-        int segs = 10, sw = (v.w - 4) / segs, on = (*it->val - it->min) * segs / (it->max - it->min);
-        for (int k = 0; k < segs; k++) fill(v.x + 2 + k * sw, v.y + 2, sw - 1, v.h - 4, k < on ? c : RGB(24, 32, 72));
-      } else {
-        char b[32];
-        if (it->type == IT_SLIDER) snprintf(b, sizeof b, "%dx", *it->val); else snprintf(b, sizeof b, "%s", it->choices[*it->val]);
-        text(v.x + (v.w - text_w(f_item, b)) / 2, v.y + (v.h - 13) / 2, f_item, c, b);
-        if (s && en) { text(v.x + 2, v.y + (v.h - 13) / 2, f_item, C_TAB, "<"); text_r(v.x + v.w - 2, v.y + (v.h - 13) / 2, f_item, C_TAB, ">"); }
-      }
+    ArtRow *r = &rows[i];
+    *r = (ArtRow){ it->label, NULL, 0, 0, item_enabled(it), it->type == IT_CHOICE };
+    if (it->type == IT_SLIDER && it->val != &cfg.ff_speed) {
+      r->slider_max = 10; r->slider = (*it->val - it->min) * 10 / (it->max - it->min);
+    } else if (it->val) {
+      if (it->type == IT_SLIDER) snprintf(vals[i], sizeof vals[i], "%dx", *it->val);
+      else snprintf(vals[i], sizeof vals[i], "%s", it->choices[*it->val]);
+      r->value = vals[i]; r->arrows = true;
     }
-    y += lh;
   }
-  Rect pr = preview_rect();
-  panel(pr.x - 4, pr.y - 4, pr.w + 8, pr.h + 8, RGB(0, 0, 0), C_EDGE);
-  tab(pr.x + 4, pr.y - 10, items[sel].scene == -2 ? "SOUND" : "MONITOR");
-  if (items[sel].scene != -2) text_r(pr.x + pr.w, pr.y + pr.h + 6, f_tab, C_DIM, "Tab: other scene");
-  Rect cr = comm_rect();
-  panel(cr.x, cr.y, cr.w, cr.h, C_COMM, C_TEXT);
-  text_wrap((Rect){ cr.x + 6, cr.y + 4, cr.w - 16, cr.h - 6 }, f_small, C_TEXT, items[sel].help);
-  if (GetTickCount() / 400 % 2) for (int k = 0; k < 3; k++) fill(cr.x + cr.w - 10 + k, cr.y + cr.h - 8 + k, 5 - 2 * k, 1, C_SEL);
-  text(x0 + 2, ch - 13, f_tab, C_DIM, in_game ? "Arrows move   Enter picks   Esc resumes" : "Arrows move   Enter picks   Mouse and pads work too");
+  art_list(rows, nitems, LIST_Y, row_h(nitems), slide((float)sel), hover);
+  art_help(items[sel].help);
+  static const char *keys[] = { "\xe2\x86\x91\xe2\x86\x93", "\xe2\x86\x90\xe2\x86\x92", "ENTER", "ESC", "TAB" };
+  static const char *acts[] = { "Choose", "Change", "Select", "Resume", "Other scene" };
+  const char *k[5], *a[5]; int n = 0;
+  for (int i = 0; i < 5; i++) {
+    if (i == 3 && !in_game) continue;
+    if (i == 4 && items[sel].scene == -2) continue;
+    k[n] = keys[i]; a[n++] = acts[i];
+  }
+  const char *right = in_game ? NULL : update_label();
+  art_band(k, a, n, right, right && update_ready());
 }
 
+#define CTL_Y 330.0f
+#define CTL_K 470.0f
+#define CTL_P 820.0f
 static void draw_controls(void) {
-  int x0 = 6, w = cw - 12, lh = (ch - TOP - 40) / (BIND_COUNT + 2);
-  if (lh > 14) lh = 14;
-  int c1 = x0 + w * 36 / 100, c2 = x0 + w * 66 / 100, y = TOP + 12;
-  panel(x0, TOP + 4, w, (BIND_COUNT + 2) * lh + 14, C_PANEL, C_EDGE);
-  tab(x0 + 8, TOP - 2, "CONTROLS"); tab(c1, TOP - 2, "KEY"); tab(c2, TOP - 2, "PAD");
-  for (int i = 0; i <= BIND_COUNT + 1; i++) {
+  int n = BIND_COUNT + 2;
+  float rh = (LIST_BOTTOM - CTL_Y) / n; if (rh > 28) rh = 28;
+  art_columns("Action", "Keyboard", "Pad", CTL_Y - 10, CTL_K, CTL_P);
+  float sy = CTL_Y + slide((float)csel) * rh;
+  art_select(ART_LIST_X - 10, sy, 1150, rh);
+  float fs = rh * 0.66f > 18 ? 18 : rh * 0.66f, base = rh * 0.5f + fs * 0.36f;
+  for (int i = 0; i < n; i++) {
+    float y = CTL_Y + i * rh;
     bool s = i == csel;
-    if (s) fill(x0 + 2, y, w - 4, lh - 1, C_ROW);
-    if (s) sparkle(x0 + 9, y + lh / 2);
-    int ty = y + (lh - 13) / 2;
+    u32 c = s ? A_PAPER : A_INK;
     if (i < BIND_COUNT) {
-      text(x0 + 17, ty, f_item, s ? C_SEL : C_TEXT, bind_names[i]);
+      art_text(VF_BOLD, fs, ART_LIST_X + 14, y + base, c, bind_names[i]);
       const char *kn = (s && capture == 1) ? "Press a key" : key_name(cfg.key[i]);
       const char *pn = (s && capture == 2) ? "Press a button" : (cfg.pad[i] > 0 ? pad_button_names[cfg.pad[i] - 1] : "-");
-      if (s && ccol == 0) fill(c1 - 2, y + 1, c2 - c1 - 8, lh - 3, C_INSET);
-      if (s && ccol == 1) fill(c2 - 2, y + 1, x0 + w - c2 - 4, lh - 3, C_INSET);
-      text(c1 + 2, ty, f_item, s && ccol == 0 ? C_LCD : C_TAB, kn);
-      text(c2 + 2, ty, f_item, s && ccol == 1 ? C_LCD : C_TAB, pn);
-    } else text(x0 + 17, ty, f_item, s ? C_SEL : C_TEXT, i == BIND_COUNT ? "Reset to defaults" : "Back");
-    y += lh;
+      if (s) {
+        art_cell(CTL_K, y, 320, rh, kn, ccol == 0, capture == 1);
+        art_cell(CTL_P, y, 380, rh, pn, ccol == 1, capture == 2);
+        if (ccol != 0) art_text(VF_BOLD, fs, CTL_K, y + base, A_PAPER, kn);
+        if (ccol != 1) art_text(VF_BOLD, fs, CTL_P, y + base, A_PAPER, pn);
+      } else {
+        art_text(VF_BOLD, fs, CTL_K, y + base, A_INK, kn);
+        art_text(VF_BOLD, fs, CTL_P, y + base, A_INK, pn);
+      }
+    } else art_text(VF_BOLD, fs, ART_LIST_X + 14, y + base, c, i == BIND_COUNT ? "Reset to defaults" : "Back");
   }
-  char buf[200]; int n = input_pad_count(), o;
-  o = snprintf(buf, sizeof buf, n ? "Pads:" : "No pads found. Plug one in any time.");
-  for (int i = 0; i < n && i < 3 && o < (int)sizeof buf; i++) o += snprintf(buf + o, sizeof buf - o, "  %s", input_pad_name(i));
-  text(x0 + 2, ch - 25, f_small, C_DIM, buf);
-  text(x0 + 2, ch - 13, f_tab, C_DIM, capture ? "Esc cancels   Backspace clears"
-                                               : "Enter rebinds   Left/Right switch column   Backspace clears   Esc goes back");
+  char buf[200]; int np = input_pad_count(), o;
+  o = snprintf(buf, sizeof buf, np ? "Pads:" : "No pads found. Plug one in any time.");
+  for (int i = 0; i < np && i < 3 && o < (int)sizeof buf; i++) o += snprintf(buf + o, sizeof buf - o, " %s", input_pad_name(i));
+  static const char *k1[] = { "ENTER", "\xe2\x86\x90\xe2\x86\x92", "BACKSPACE", "ESC" }, *a1[] = { "Rebind", "Key or pad", "Clear", "Back" };
+  static const char *k2[] = { "ESC", "BACKSPACE" }, *a2[] = { "Cancel", "Clear" };
+  if (capture) art_band(k2, a2, 2, buf, false); else art_band(k1, a1, 4, buf, false);
 }
 
 static Nav n_up, n_dn, n_lt, n_rt, n_ok, n_bk, n_tab;
@@ -224,10 +231,12 @@ UiResult ui_frame(bool in_game) {
       if (bk) page = 0;
     }
   } else {
-    int mx = mouse_x / px, my = mouse_y / px, ytop = TOP + 10;
-    if (update_ready() && ((mouse_click && mx >= ubtn.x && mx < ubtn.x + ubtn.w && my >= ubtn.y && my < ubtn.y + ubtn.h) || input_key('U'))) update_download();
-    if (mouse_x >= 0 && mx >= 6 && mx < 6 + list_w() && my >= ytop) {
-      int i = (my - ytop) / row_h();
+    float mx, my;
+    art_begin(ui_px, ui_w, ui_h);
+    art_page_pos(mouse_x, mouse_y, &mx, &my);
+    if (update_ready() && ((mouse_click && mouse_x >= ubtn.x && mouse_x < ubtn.x + ubtn.w && mouse_y >= ubtn.y && mouse_y < ubtn.y + ubtn.h) || input_key('U'))) update_download();
+    if (mouse_x >= 0 && mx >= ART_LIST_X - 14 && mx < ART_LIST_X + ART_LIST_W + 14 && my >= LIST_Y) {
+      int i = (int)((my - LIST_Y) / row_h(nitems));
       hover = i < nitems ? i : -1;
       if (hover >= 0 && mouse_click) { sel = hover; if (items[sel].type == IT_ACTION) ok = true; else change(&items[sel], 1); }
       if (hover >= 0 && wheel) { sel = hover; change(&items[sel], wheel > 0 ? 1 : -1); }
@@ -251,26 +260,29 @@ UiResult ui_frame(bool in_game) {
   }
   mouse_click = false; wheel = 0;
 
-  fill(0, 0, cw, ch, C_SPACE);
-  stars();
-  logo(8, 2);
-  text_r(cw - 8, 10, f_small, C_DIM, in_game ? "Paused" : "brought to you by carlos ramirez :)");
-  if (page == 1) draw_controls(); else draw_settings(in_game);
-  ubtn.w = 0;
-  if (page == 0 && !in_game && update_label()) {
-    const char *l = update_label();
-    int w = text_w(f_tab, l) + 10;
-    ubtn = (Rect){ cw - 8 - w, ch - 15, w, 13 };
-    if (update_ready()) { panel(ubtn.x, ubtn.y, w, 13, C_ROW, C_SEL); text(ubtn.x + 5, ubtn.y + 1, f_tab, C_SEL, l); }
-    else text_r(cw - 8, ch - 13, f_tab, C_DIM, l);
+  // background (cached per window size and state), then the page
+  int key = (page << 1) | (in_game ? 1 : 0);
+  if (key != bg_key) {
+    art_begin(ui_bg, ui_w, ui_h);
+    art_background(in_game);
+    if (page == 0) art_monitor();
+    bg_key = key;
   }
-  Rect pr = preview_rect();
-  if (page == 0 && !sc[0]) text(pr.x + (pr.w - text_w(f_small, "Warming up...")) / 2, pr.y + pr.h / 2 - 6, f_small, C_DIM, "Warming up...");
-  GdiFlush();
-  for (int i = 0; i < cw * ch; i++) canvas[i] |= 0xff000000;
-  video_clear(0, 0, 0);
-  video_draw_rgba(canvas, cw, ch, (Rect){ 0, 0, cw * px, ch * px }, false);
-  pr = (Rect){ pr.x * px, pr.y * px, pr.w * px, pr.h * px };
+  memcpy(ui_px, ui_bg, (size_t)ui_w * ui_h * 4);
+  art_begin(ui_px, ui_w, ui_h);
+  Rect pr = art_monitor(), ir = {0, 0, 0, 0};
+  if (page == 1) {
+    memcpy(ui_px, ui_bg, (size_t)ui_w * ui_h * 4);   // no monitor on this page
+    draw_controls();
+  } else {
+    draw_settings(in_game);
+    if (in_game) art_paused();
+    if (sc[0]) ir = art_inset(pr);
+    else art_note(pr, "Warming up\xe2\x80\xa6");
+  }
+  ubtn = art_band_button();
+  video_clear(1, 1, 1);
+  video_draw_rgba(ui_px, ui_w, ui_h, (Rect){ 0, 0, ui_w, ui_h }, false);
 
   if (page == 0 && sc[0]) {
     int s = scene >= 0 ? scene : (items[sel].scene == 1 ? 1 : 0);
@@ -280,11 +292,7 @@ UiResult ui_frame(bool in_game) {
       video_upload_game(pv_big, sc_w[s] * 4, GAME_H * 4);
     } else video_upload_game(sc[s], sc_w[s], GAME_H);
     video_draw_game(&cfg, pr, 0, 0, 1, 1);
-    int iw = pr.w / 3, ih = pr.h / 3;
-    Rect ir = { pr.x + pr.w - iw - 4 * px, pr.y + pr.h - ih - 4 * px, iw, ih };
-    static const u32 edge = 0xff88a0e8;
-    video_draw_rgba(&edge, 1, 1, (Rect){ ir.x - px, ir.y - px, ir.w + 2 * px, ir.h + 2 * px }, false);
-    float cxu = s == 1 ? 0.30f : 0.42f, cyv = s == 1 ? 0.62f : 0.28f, du = 0.5f / 6, dv = 0.5f / 6 * ((float)ih / iw) * (4.0f / 3);
+    float cxu = s == 1 ? 0.30f : 0.42f, cyv = s == 1 ? 0.62f : 0.28f, du = 0.5f / 6, dv = 0.5f / 6 * ((float)ir.h / ir.w) * (4.0f / 3);
     video_draw_game(&cfg, ir, cxu - du, cyv - dv, cxu + du, cyv + dv);
   }
   return res;
@@ -301,39 +309,27 @@ void osd_draw(double fps) {
   if (cfg.show_fps) snprintf(fpsbuf, sizeof fpsbuf, "%.1f fps", fps);
   bool msg = GetTickCount() < osd_until;
   if (!msg && !fpsbuf[0]) return;
-  canvas_ensure(video_width(), video_height());
+  float sc = video_height() / (float)ART_H;
+  if (sc < 0.6f) sc = 0.6f;
+  int w = (int)(640 * sc), h = (int)(110 * sc);
   static u32 *ov; static int ow, oh;
-  int w = cw / 2, h = 30;
-  if (ow != w || oh != h) { free(ov); ov = malloc(w * h * 4); ow = w; oh = h; }
-  fill(0, 0, w, h, RGB(0, 0, 0));
-  if (msg) text(2, 2, f_item, C_SEL, osd_text);
-  if (fpsbuf[0]) text(2, 16, f_item, C_LCD, fpsbuf);
-  GdiFlush();
-  for (int y = 0; y < h; y++)
-    for (int x = 0; x < w; x++) {
-      u32 p = canvas[y * cw + x];
-      u32 l = ((p >> 16) & 255) > ((p >> 8) & 255) ? (p >> 16) & 255 : (p >> 8) & 255;
-      ov[y * w + x] = (l ? (u32)(120 + l * 135 / 255) << 24 : 0) | (p & 0xffffff);
-    }
-  video_draw_rgba(ov, w, h, (Rect){ 4 * px, 4 * px, w * px, h * px }, true);
+  if (ow != w || oh != h) { free(ov); ov = malloc((size_t)w * h * 4); ow = w; oh = h; }
+  memset(ov, 0, (size_t)w * h * 4);
+  art_osd(ov, w, h, sc, msg ? osd_text : NULL, fpsbuf[0] ? fpsbuf : NULL);
+  video_draw_rgba(ov, w, h, (Rect){ (int)(8 * sc), (int)(8 * sc), w, h }, true);
 }
 
-// a line of text in the bottom-right corner over the picture (the remastered opening's credit)
+// a line of text in the bottom-right corner of r (the remastered opening's credit)
 void osd_caption(const char *s, float alpha, Rect r) {
   if (alpha <= 0) return;
-  canvas_ensure(video_width(), video_height());
+  float sc = r.h / (float)ART_H * 1.25f;
+  if (sc < 0.6f) sc = 0.6f;
+  int w, h;
+  art_caption_size(sc, s, &w, &h);
   static u32 *ov; static int ow, oh;
-  int w = text_w(f_small, s) + 12, h = 11 + 9;
-  if (w > cw) w = cw;
   if (ow != w || oh != h) { free(ov); ov = malloc((size_t)w * h * 4); ow = w; oh = h; }
-  fill(0, 0, w, h, RGB(0, 0, 0));
-  text(6, 3, f_small, RGB(255, 255, 255), s);
-  GdiFlush();
-  for (int y = 0; y < h; y++)
-    for (int x = 0; x < w; x++) {
-      u32 l = canvas[y * cw + x] & 255;     // white text on black: coverage
-      u32 a = (u32)((110 + l * 145 / 255) * alpha);
-      ov[y * w + x] = a << 24 | l * 0x010101;
-    }
-  video_draw_rgba(ov, w, h, (Rect){ r.x + r.w - (w + 6) * px, r.y + r.h - (h + 6) * px, w * px, h * px }, true);
+  memset(ov, 0, (size_t)w * h * 4);
+  art_caption(ov, w, h, sc, s);
+  if (alpha < 1) for (int i = 0; i < w * h; i++) ov[i] = (u32)((ov[i] >> 24) * alpha) << 24 | (ov[i] & 0xffffff);
+  video_draw_rgba(ov, w, h, (Rect){ r.x + r.w - w - (int)(10 * sc), r.y + r.h - h - (int)(10 * sc), w, h }, true);
 }

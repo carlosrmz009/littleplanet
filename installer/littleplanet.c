@@ -184,8 +184,8 @@ static int step(void) {
     text(18, 46, f_item, C_TEXT, "Install to");
     int bw = 56, pw = cw - 36 - bw - 6;
     fill(18, 61, pw, 15, C_INSET);
-    SelectObject(mdc, f_item); SetTextColor(mdc, C_LCD);
-    RECT rc = { 22, 62, 18 + pw - 3, 75 }; DrawTextW(mdc, dir, -1, &rc, DT_PATH_ELLIPSIS | DT_SINGLELINE | DT_NOPREFIX);
+    char d8[MAX_PATH * 3]; WideCharToMultiByte(CP_UTF8, 0, dir, -1, d8, sizeof d8, NULL, NULL);
+    text_fit(22, 62, pw - 8, f_item, C_LCD, d8);
     if (gfx_button(cw - 18 - bw, 61, bw, "Change")) pick_dir();
     gfx_check(26, 86, "Desktop shortcut", &desk);
     text(18, 104, f_small, C_DIM, "Start menu entry is always added, so search finds it.");

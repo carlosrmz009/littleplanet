@@ -187,3 +187,7 @@ bool plat_home(void) {
   if (chdir(d)) { plat_error("Can't open the data folder."); return false; }
   return mac_install();
 }
+
+// SDL window icon: macOS takes it from the app bundle
+struct SDL_Window;
+void sdl_icon(struct SDL_Window *w) { (void)w; }
