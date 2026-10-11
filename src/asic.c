@@ -2,6 +2,7 @@
 // in Word RAM, one line per trace vector, at 5*4 sub cycles per dot.
 #include "asic.h"
 #include "mcd.h"
+#include "state.h"
 
 static u16 reg[8];          // $FF8058..$FF8066
 static bool busy;
@@ -128,4 +129,9 @@ void asic_run(u32 cycles) {
     reg[6] = (reg[6] - 1) & 0xff;
     cycles_left += cycles_per_line;
   }
+}
+
+void asic_serialize(Ser *s) {
+  SER(s, reg); SER(s, busy); SER(s, trace); SER(s, buf_start); SER(s, buf_col_step); SER(s, dot_mask); SER(s, stamp_shift);
+  SER(s, map_shift); SER(s, map_base); SER(s, cycles_left); SER(s, cycles_per_line);
 }

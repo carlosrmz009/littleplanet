@@ -457,6 +457,40 @@ bool disc_read_audio(u32 lba, s16 *buf) {
   return true;
 }
 
+// ---- files an image is made of (for copying it somewhere else)
+int disc_image_files(const char *path, char (*out)[1024], int max) {
+  int n = 0;
+  if (n < max) snprintf(out[n++], 1024, "%s", path);
+  const char *e = ext_of(path);
+  char dir[1024]; dir_of(path, dir, sizeof dir);
+  if (ieq(e, "cue")) {
+    FILE *f = u8fopen(path, "rb");
+    char line[1200];
+    while (f && fgets(line, sizeof line, f) && n < max) {
+      char *p = line;
+      while (isspace((u8)*p)) p++;
+      if (strncmp(p, "FILE", 4)) continue;
+      p += 4;
+      while (isspace((u8)*p)) p++;
+      char name[1024];
+      if (*p == '"') { p++; char *q = strchr(p, '"'); if (!q) continue; *q = 0; } else { char *q = p; while (*q && !isspace((u8)*q)) q++; *q = 0; }
+      snprintf(name, sizeof name, "%s", p);
+      if (name[0] == '/' || (name[0] && name[1] == ':')) snprintf(out[n++], 1024, "%s", name);
+      else snprintf(out[n++], 1024, "%s%s", dir, name);
+    }
+    if (f) fclose(f);
+  } else if (ieq(e, "ccd")) {
+    static const char *ex[] = {".img", ".sub"};
+    for (int i = 0; i < 2 && n < max; i++) {
+      snprintf(out[n], 1024, "%s", path);
+      strcpy(strrchr(out[n], '.'), ex[i]);
+      FILE *f = u8fopen(out[n], "rb");
+      if (f) { fclose(f); n++; }
+    }
+  }
+  return n;
+}
+
 // ---- ISO 9660
 static int iso_dir(u32 lba, u32 size, IsoFile *out, int max, const char *want, IsoFile *found) {
   u8 sec[2048];

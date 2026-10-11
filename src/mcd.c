@@ -7,11 +7,13 @@
 #include "z80.h"
 #include "io.h"
 #include "asic.h"
+#include "state.h"
 
 Mcd mcd;
 M68k mcpu, scpu;
 
 static u64 main_mclk_done;
+static u32 timer_frac;
 
 u64 mcd_now(void) { return main_mclk_done + (u64)mcpu.cyc * 7; }
 
@@ -350,6 +352,8 @@ void mcd_init(void) {
   scpu.line_a = hle_sub_trap; scpu.id = 1;
   mcd.ret = 1;
   mcd.z80_reset = 0;
+  main_mclk_done = 0;
+  timer_frac = 0;
   vdp_reset();
   z80_init();
   audio_init();
@@ -363,7 +367,6 @@ static bool dbg_dumped;
 void mcd_debug(bool on) { dbg_ring = on ? calloc(4096, 4) : NULL; }
 
 // sub CPU and devices catch up to master clock `t`
-static u32 timer_frac;
 static void sub_timers(u32 cycles) {
   // stopwatch and timer W tick every 30.72 us = 384 sub cycles
   timer_frac += cycles;
@@ -432,4 +435,23 @@ void mcd_run_frame(void) {
     run_main_until(line_start + MCLK_PER_LINE);
   }
   mcd.frame++;
+}
+
+static void cpu_ser(Ser *s, M68k *c) {
+  SER(s, c->r); SER(s, c->osp); SER(s, c->pc); SER(s, c->sr); SER(s, c->ir); SER(s, c->stopped); SER(s, c->halted);
+  SER(s, c->ipl); SER(s, c->trace_pending); SER(s, c->cyc); SER(s, c->ipc);
+}
+
+void mcd_serialize(Ser *s) {
+  u32 magic = 0x5350504c, version = 1;   // "LPPS"
+  SER(s, magic); SER(s, version);
+  if (s->load && (magic != 0x5350504c || version != 1)) { s->fail = true; return; }
+  SER(s, mcd);
+  cpu_ser(s, &mcpu); cpu_ser(s, &scpu);
+  SER(s, main_mclk_done); SER(s, timer_frac);
+  vdp_serialize(s);
+  z80_serialize(s);
+  cdc_serialize(s);
+  asic_serialize(s);
+  audio_serialize(s);
 }

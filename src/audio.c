@@ -4,6 +4,7 @@
 #include "fm.h"
 #include "cdc.h"
 #include "resample.h"
+#include "state.h"
 #include <math.h>
 
 #define FM_MCLK (144 * 7)     // 53267 Hz
@@ -18,6 +19,15 @@ static u16 cdda_vol = 0x400;
 static s16 out_ring[OUT_RING * 2];
 static u32 out_w, out_r;
 static float dc_l, dc_r, dcin_l, dcin_r;
+
+// Model 1 Mega Drive output filter (FM and PSG only; the Mega-CD's PCM and CD audio take
+// their own path): first order, about 3.39 kHz
+static float lp_l, lp_r;
+static const float LP_A = 0.3586f;   // 1 - exp(-2*pi*3390/48000)
+bool audio_lowpass, audio_dual;
+static s16 alt_ring[OUT_RING * 2];
+static u32 alt_w, alt_r;
+static float adc_l, adc_r, adcin_l, adcin_r;
 
 float audio_gain_fm = 1.0f, audio_gain_psg = 1.0f, audio_gain_pcm = 1.0f, audio_gain_cd = 1.0f, audio_master = 1.0f;
 
@@ -162,29 +172,41 @@ void audio_init(void) {
   memset(&pcm, 0, sizeof pcm);
   pcm.on = 0xff;
   fm_next = FM_MCLK; psg_next = PSG_MCLK; pcm_done = cd_done = synced = 0;
-  out_w = out_r = 0;
-  dc_l = dc_r = dcin_l = dcin_r = 0;
+  out_w = out_r = alt_w = alt_r = 0;
+  dc_l = dc_r = dcin_l = dcin_r = adc_l = adc_r = adcin_l = adcin_r = lp_l = lp_r = 0;
   cdda_vol = 0x400;
+}
+
+
+static void put(s16 *ringbuf, u32 *w, u32 *r, float l, float rr) {
+  int il = (int)lrintf(l * 32767.0f), ir = (int)lrintf(rr * 32767.0f);
+  if (il > 32767) il = 32767; else if (il < -32768) il = -32768;
+  if (ir > 32767) ir = 32767; else if (ir < -32768) ir = -32768;
+  u32 i = *w % OUT_RING;
+  ringbuf[i * 2] = (s16)il; ringbuf[i * 2 + 1] = (s16)ir;
+  (*w)++;
+  if (*w - *r > OUT_RING) *r = *w - OUT_RING;
 }
 
 static void mix_out(void) {
   while (rs_ready(&rs_fm) && rs_ready(&rs_psg) && rs_ready(&rs_pcm) && rs_ready(&rs_cd)) {
     float fl, fr, pl, pr, ml, mr, cl, cr;
     rs_pop(&rs_fm, &fl, &fr); rs_pop(&rs_psg, &pl, &pr); rs_pop(&rs_pcm, &ml, &mr); rs_pop(&rs_cd, &cl, &cr);
-    float l = (fl * audio_gain_fm + pl * audio_gain_psg) * 0.5f + ml * audio_gain_pcm * 0.5f + cl * audio_gain_cd * 0.5f;
-    float r = (fr * audio_gain_fm + pr * audio_gain_psg) * 0.5f + mr * audio_gain_pcm * 0.5f + cr * audio_gain_cd * 0.5f;
+    float mdl = (fl * audio_gain_fm + pl * audio_gain_psg) * 0.5f, mdr = (fr * audio_gain_fm + pr * audio_gain_psg) * 0.5f;
+    float cdl = ml * audio_gain_pcm * 0.5f + cl * audio_gain_cd * 0.5f, cdr = mr * audio_gain_pcm * 0.5f + cr * audio_gain_cd * 0.5f;
+    lp_l += LP_A * (mdl - lp_l); lp_r += LP_A * (mdr - lp_r);
+    float l = (audio_lowpass ? lp_l : mdl) + cdl, r = (audio_lowpass ? lp_r : mdr) + cdr;
     // AC coupling (the output capacitors): one-pole high-pass around 5 Hz
     const float k = 0.99935f;
     float hl = l - dcin_l + k * dc_l, hr = r - dcin_r + k * dc_r;
     dcin_l = l; dcin_r = r; dc_l = hl; dc_r = hr;
-    hl *= audio_master; hr *= audio_master;
-    int il = (int)lrintf(hl * 32767.0f), ir = (int)lrintf(hr * 32767.0f);
-    if (il > 32767) il = 32767; else if (il < -32768) il = -32768;
-    if (ir > 32767) ir = 32767; else if (ir < -32768) ir = -32768;
-    u32 w = out_w % OUT_RING;
-    out_ring[w * 2] = (s16)il; out_ring[w * 2 + 1] = (s16)ir;
-    out_w++;
-    if (out_w - out_r > OUT_RING) out_r = out_w - OUT_RING;
+    put(out_ring, &out_w, &out_r, hl * audio_master, hr * audio_master);
+    if (audio_dual) {   // the other sound setting, for the menu's sample
+      float l2 = (audio_lowpass ? mdl : lp_l) + cdl, r2 = (audio_lowpass ? mdr : lp_r) + cdr;
+      float h2l = l2 - adcin_l + k * adc_l, h2r = r2 - adcin_r + k * adc_r;
+      adcin_l = l2; adcin_r = r2; adc_l = h2l; adc_r = h2r;
+      put(alt_ring, &alt_w, &alt_r, h2l * audio_master, h2r * audio_master);
+    }
   }
 }
 
@@ -235,3 +257,24 @@ int audio_fetch(s16 *out, int frames) {
   return n;
 }
 int audio_available(void) { return (int)(out_w - out_r); }
+int audio_fetch_alt(s16 *out, int frames) {
+  int n = 0;
+  while (n < frames && alt_r < alt_w) {
+    u32 r = alt_r % OUT_RING;
+    out[n * 2] = alt_ring[r * 2]; out[n * 2 + 1] = alt_ring[r * 2 + 1];
+    alt_r++; n++;
+  }
+  return n;
+}
+
+void audio_serialize(Ser *s) {
+  fm_serialize(s);
+  SER(s, psg); SER(s, pcm); SER(s, fm_next); SER(s, psg_next); SER(s, pcm_done); SER(s, cd_done); SER(s, synced); SER(s, cdda_vol);
+  if (s->load) {
+    // restart the resamplers on the restored timeline
+    double rates[4] = {(double)MCLK_HZ / FM_MCLK, (double)MCLK_HZ / PSG_MCLK, SUB_HZ / 384.0, 44100};
+    Resampler *rs[4] = {&rs_fm, &rs_psg, &rs_pcm, &rs_cd};
+    for (int i = 0; i < 4; i++) { rs_free(rs[i]); rs_init(rs[i], rates[i], AUDIO_RATE); }
+    out_w = out_r = 0;
+  }
+}

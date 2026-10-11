@@ -19,6 +19,7 @@ bool disc_read_data(u32 lba, u8 *buf);       // 2048 bytes of user data
 bool disc_read_audio(u32 lba, s16 *buf);     // 588 stereo frames, little-endian host order
 
 FILE *u8fopen(const char *path, const char *mode);
+int disc_image_files(const char *path, char (*out)[1024], int max);   // the image and everything it references
 
 typedef struct { u32 h[5]; u64 len; u8 buf[64]; } Sha1;
 void sha1_init(Sha1 *s);

@@ -4,6 +4,7 @@
 #include "mcd.h"
 #include "audio.h"
 #include "vdp.h"
+#include "state.h"
 
 static Z80 z;
 static u8 zram[0x2000];
@@ -84,4 +85,11 @@ void z80_run_until(u64 t) {
     z_mclk += (u64)c * 15;
   }
   z80_running = false;
+}
+
+void z80_serialize(Ser *s) {
+  Z80 t = z;
+  SER(s, t);
+  if (s->load) { t.read = z.read; t.write = z.write; t.in = z.in; t.out = z.out; z = t; }
+  SER(s, zram); SER(s, bank); SER(s, z_mclk); SER(s, int_until);
 }

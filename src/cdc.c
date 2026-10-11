@@ -3,6 +3,7 @@
 #include "mcd.h"
 #include "disc.h"
 #include "audio.h"
+#include "state.h"
 
 CdDrive drive;
 
@@ -255,4 +256,10 @@ void cdc_run(u32 cycles) {
   // 12.5 MHz / 75 = 166666.67 cycles per tick; count in thirds
   drive.tick_frac += cycles * 3;
   while (drive.tick_frac >= 500000) { drive.tick_frac -= 500000; tick(); }
+}
+
+void cdc_serialize(Ser *s) {
+  SER(s, drive); SER(s, fifo); SER(s, fifo_head); SER(s, fifo_count);
+  SER(s, xfer); SER(s, xfer_header); SER(s, xfer_pos); SER(s, xfer_len); SER(s, xfer_active); SER(s, dma_delay); SER(s, cdc_ca);
+  SER(s, cdda_ring); SER(s, cdda_w); SER(s, cdda_r);
 }

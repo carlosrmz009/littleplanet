@@ -1,6 +1,7 @@
 // YM2612 through ymfm, with its timers and busy flag driven by the emulated clock.
 #include "../third_party/ymfm/ymfm_opn.h"
 #include <cstdint>
+#include <vector>
 
 extern "C" {
 #include "fm.h"
@@ -51,6 +52,29 @@ void fm_generate(int32_t *lr) {
   intf.advance(144);
   lr[0] = out.data[0];
   lr[1] = out.data[1];
+}
+
+}
+
+extern "C" {
+#include "state.h"
+
+void fm_serialize(Ser *s) {
+  std::vector<uint8_t> buf;
+  uint32_t n = 0;
+  if (!s->load) {
+    ymfm::ymfm_saved_state st(buf, true);
+    chip.save_restore(st);
+    n = (uint32_t)buf.size();
+  }
+  SER(s, n);
+  if (s->load) buf.resize(n);
+  ser_bytes(s, buf.data(), n);
+  if (s->load && !s->fail) {
+    ymfm::ymfm_saved_state st(buf, false);
+    chip.save_restore(st);
+  }
+  SER(s, intf.now); SER(s, intf.timer_end); SER(s, intf.busy_end);
 }
 
 }

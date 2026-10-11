@@ -2,7 +2,7 @@
 #include "disc.h"
 
 const DiscVersion disc_versions[] = {
-  {"Sonic the Hedgehog CD (Japan)", "TODO", 'J', true},
+  {"Sonic the Hedgehog CD (Japan)", "5b0ac16233028bcd8691c71b0a749b8d485dae7c", 'J', true},
   {NULL, NULL, 0, false},
 };
 

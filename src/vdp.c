@@ -1,8 +1,10 @@
 // Sega 315-5313 VDP (Mode 5). Renders one scanline at a time.
 #include "vdp.h"
+#include <stddef.h>
 #include "mcd.h"
 #include "audio.h"
 #include "z80.h"
+#include "state.h"
 
 Vdp vdp;
 
@@ -28,6 +30,7 @@ u8 wram_dma_r8(u32 a);
 void vdp_reset(void) {
   memset(&vdp, 0, sizeof vdp);
   memset(sat_cache, 0, sizeof sat_cache);
+  odd_frame = false; line_now = 0; wram_dma_latch = 0; sprite_overflow_line = sprite_collision = 0;
   for (int i = 0; i < 512; i++) {
     int r = (i >> 0) & 7, g = (i >> 3) & 7, b = (i >> 6) & 7;
     pal_rgb[0][i] = LV_NORMAL[r] << 16 | LV_NORMAL[g] << 8 | LV_NORMAL[b];
@@ -381,4 +384,10 @@ void vdp_line(int line) {
     }
     dst[x] = pal_rgb[mode][cram_index(vdp.cram[pix])];
   }
+}
+
+void vdp_serialize(Ser *s) {
+  ser_bytes(s, &vdp, offsetof(Vdp, fb));
+  SER(s, sat_cache); SER(s, odd_frame); SER(s, line_now); SER(s, wram_dma_latch);
+  SER(s, sprite_overflow_line); SER(s, sprite_collision);
 }

@@ -11,7 +11,7 @@ enum { T_BOOT = 0x001, T_HOTSTART, T_VDPREGS, T_DMA, T_LOGO, T_MAIN_UNKNOWN = 0x
        T_LEVEL2 = 0x101, T_CDBIOS, T_BURAM, T_CDBOOT, T_SETJMPTBL, T_SUB_UNKNOWN = 0x10f };
 
 // sub-CPU BIOS layout (PRG-RAM)
-enum { S_KERNEL = 0x0300, S_LV2 = 0x0340, S_RTE = 0x0380, S_WAITVSYNC = 0x0390, S_CDBIOS = 0x03b0, S_BURAM = 0x03b4,
+enum { S_KERNEL = 0x0300, S_LV2 = 0x0340, S_RTE = 0x0380, S_RTS = 0x0382, S_WAITVSYNC = 0x0390, S_CDBIOS = 0x03b0, S_BURAM = 0x03b4,
        S_CDBOOT = 0x03b8, S_SETJMPTBL = 0x03bc, S_UNKNOWN = 0x03c0, S_STACK = 0x5e80, S_VSYNC = 0x5ef0, S_INITDONE = 0x5ef1 };
 // main BIOS ROM layout
 enum { M_BOOT = 0x0200, M_HOTSTART = 0x0280, M_VDPREGS = 0x02b0, M_DMA = 0x02d4, M_LOGO = 0x0364, M_RTE = 0x0400,
@@ -60,6 +60,7 @@ static void build_sub_bios(void) {
   static const u16 lv2[] = {0x48e7, 0xfffe, 0xa000 | T_LEVEL2, 0x4a38, S_INITDONE, 0x6704, 0x4eb8, 0x5f34, 0x4cdf, 0x7fff, 0x4e73};
   for (unsigned i = 0; i < sizeof lv2 / 2; i++) put16(p, S_LV2 + i * 2, lv2[i]);
   put16(p, S_RTE, 0x4e73);
+  put16(p, S_RTS, 0x4e75);
   static const u16 wv[] = {0x08b8, 0x0000, S_VSYNC, 0x0838, 0x0000, S_VSYNC, 0x67f8, 0x4e75};
   for (unsigned i = 0; i < sizeof wv / 2; i++) put16(p, S_WAITVSYNC + i * 2, wv[i]);
   put16(p, S_CDBIOS, 0xa000 | T_CDBIOS); put16(p, S_CDBIOS + 2, 0x4e75);
@@ -79,7 +80,7 @@ static void build_sub_bios(void) {
   u32 start = 0x6000 + get32(p, 0x6018);
   for (int i = 0; i < 4; i++) {
     u16 off = p[start + i * 2] << 8 | p[start + i * 2 + 1];
-    jmp_entry(p, 0x5f28 + i * 6, off ? start + off : S_RTE);
+    jmp_entry(p, 0x5f28 + i * 6, off ? start + off : S_RTS);
   }
 }
 

@@ -1,0 +1,299 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  BUILD_ID: ${{ github.sha }}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: build
+        shell: cmd
+        run: |
+          call build.bat || exit /b 1
+      - name: smoke test
+        shell: cmd
+        run: |
+          python -I tools\mktestdisc.py build\test.iso || exit /b 1
+          build\lp.exe --version > build\version.txt
+          type build\version.txt
+          findstr /c:"Little Planet" build\version.txt || exit /b 1
+          build\lp.exe --frames 120 --hashlog build\h1.txt build\test.iso
+          build\lp.exe --frames 120 --hashlog build\h2.txt build\test.iso
+          fc build\h1.txt build\h2.txt || exit /b 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: littleplanet-windows
+          path: build/littleplanet.exe
+
+  macos:
+    runs-on: macos-14
+    env:
+      SDL_VERSION: 2.30.11
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - id: sdl-cache
+        uses: actions/cache@v4
+        with:
+          path: build/sdl
+          key: sdl-${{ env.SDL_VERSION }}-universal-11.0
+      - name: sdl
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o sdl.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/SDL2-$SDL_VERSION.tar.gz"
+          echo "8b8d4aef2038533da814965220f88f77d60dfa0f32685f80ead65e501337da7f  sdl.tar.gz" | shasum -a 256 -c
+          tar xzf sdl.tar.gz
+          cmake -S "SDL2-$SDL_VERSION" -B build/sdlbuild -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF -DCMAKE_INSTALL_PREFIX="$PWD/build/sdl"
+          cmake --build build/sdlbuild -j 4
+          cmake --install build/sdlbuild
+      - name: build
+        run: |
+          ./build_mac.sh
+          python3 -I tools/mktestdisc.py build/test.iso
+      - name: smoke test
+        timeout-minutes: 10
+        run: |
+          app="build/Little Planet.app"
+          bin="$app/Contents/MacOS/littleplanet"
+          "$bin" --version
+          lipo -archs "$bin" | grep -q arm64
+          lipo -archs "$bin" | grep -q x86_64
+          codesign --verify --deep --strict "$app"
+          plutil -lint "$app/Contents/Info.plist"
+          test -s "$app/Contents/Resources/littleplanet.icns"
+          perl -e 'alarm 120; exec @ARGV' "$bin" --frames 120 --hashlog build/h1.txt build/test.iso
+          perl -e 'alarm 120; exec @ARGV' "$bin" --frames 120 --hashlog build/h2.txt build/test.iso
+          cmp build/h1.txt build/h2.txt
+          hdiutil verify build/littleplanet-macos.dmg
+      - name: ui smoke test
+        timeout-minutes: 10
+        run: |
+          perl -e 'alarm 90; exec @ARGV' "build/Little Planet.app/Contents/MacOS/littleplanet" --uitest build/ut build/test.iso || true
+          rm -f preview_cache.bin
+          for f in build/ut_*.bmp; do sips -s format png "$f" --out "${f%.bmp}.png" >/dev/null; done
+          ls build/ut_*.png
+          test -f build/ut_08_controls.png
+      - name: wizard launch test
+        timeout-minutes: 5
+        run: |
+          "build/Little Planet.app/Contents/MacOS/littleplanet" & p=$!
+          sleep 10; screencapture -x build/ut_install.png || true
+          kill $p
+          ditto "build/Little Planet.app" "/Applications/Little Planet.app"
+          "/Applications/Little Planet.app/Contents/MacOS/littleplanet" & p=$!
+          sleep 10; screencapture -x build/ut_discwiz.png || true
+          kill $p
+          rm -rf "/Applications/Little Planet.app" "$HOME/Library/Application Support/Little Planet"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uitest-macos
+          path: build/ut_*.png
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: littleplanet-macos
+          path: build/littleplanet-macos.dmg
+
+  linux:
+    name: linux-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+            file: littleplanet-linux.AppImage
+            tool: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+            runtime: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+          - os: ubuntu-22.04-arm
+            arch: aarch64
+            file: littleplanet-linux-aarch64.AppImage
+            tool: f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
+            runtime: 00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
+    runs-on: ${{ matrix.os }}
+    env:
+      SDL_VERSION: 2.30.11
+      FT_VERSION: 2.13.3
+    steps:
+      - uses: actions/checkout@v4
+      - name: packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake pkg-config python3 file \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxxf86vm-dev libxinerama-dev \
+            libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev \
+            libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev \
+            fonts-dejavu-core fonts-dejavu-extra xvfb xdotool imagemagick desktop-file-utils libgl1-mesa-dri
+      - id: deps-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/sdl
+            build/ft
+          key: linux-${{ matrix.arch }}-sdl-${{ env.SDL_VERSION }}-ft-${{ env.FT_VERSION }}-1
+      - name: sdl and freetype
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o sdl.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/SDL2-$SDL_VERSION.tar.gz"
+          echo "8b8d4aef2038533da814965220f88f77d60dfa0f32685f80ead65e501337da7f  sdl.tar.gz" | sha256sum -c
+          tar xzf sdl.tar.gz
+          cmake -S "SDL2-$SDL_VERSION" -B build/sdlbuild -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_STATIC_PIC=ON -DSDL_TEST=OFF -DSDL_KMSDRM=OFF \
+            -DSDL_X11=ON -DSDL_X11_SHARED=ON -DSDL_WAYLAND=ON -DSDL_WAYLAND_SHARED=ON -DSDL_WAYLAND_LIBDECOR=ON -DSDL_WAYLAND_LIBDECOR_SHARED=ON \
+            -DSDL_ALSA=ON -DSDL_ALSA_SHARED=ON -DSDL_PULSEAUDIO=ON -DSDL_PULSEAUDIO_SHARED=ON -DSDL_PIPEWIRE=ON -DSDL_PIPEWIRE_SHARED=ON \
+            -DCMAKE_INSTALL_PREFIX="$PWD/build/sdl"
+          cmake --build build/sdlbuild -j "$(nproc)"
+          cmake --install build/sdlbuild
+          mkdir -p build/sdl/licenses
+          cp "SDL2-$SDL_VERSION/LICENSE.txt" build/sdl/licenses/SDL2.txt
+          curl -fsSL -o ft.tar.xz "https://download.savannah.gnu.org/releases/freetype/freetype-$FT_VERSION.tar.xz" ||
+            curl -fsSL -o ft.tar.xz "https://downloads.sourceforge.net/project/freetype/freetype2/$FT_VERSION/freetype-$FT_VERSION.tar.xz"
+          sha256sum ft.tar.xz
+          echo "0550350666d427c74daeb85d5ac7bb353acba5f76956395995311a9c6f063289  ft.tar.xz" | sha256sum -c
+          tar xJf ft.tar.xz
+          cmake -S "freetype-$FT_VERSION" -B build/ftbuild -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=OFF \
+            -DFT_DISABLE_ZLIB=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON \
+            -DCMAKE_INSTALL_PREFIX="$PWD/build/ft" -DCMAKE_INSTALL_LIBDIR=lib
+          cmake --build build/ftbuild -j "$(nproc)"
+          cmake --install build/ftbuild
+          mkdir -p build/ft/licenses
+          cp "freetype-$FT_VERSION/LICENSE.TXT" build/ft/licenses/FreeType.txt
+          cp "freetype-$FT_VERSION/docs/FTL.TXT" build/ft/licenses/FTL.txt
+      - name: appimagetool
+        run: |
+          mkdir -p build
+          curl -fsSL -o build/appimagetool "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${{ matrix.arch }}.AppImage"
+          curl -fsSL -o build/runtime "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-${{ matrix.arch }}"
+          echo "${{ matrix.tool }}  build/appimagetool" | sha256sum -c
+          echo "${{ matrix.runtime }}  build/runtime" | sha256sum -c
+          chmod +x build/appimagetool
+      - name: build
+        run: |
+          APPIMAGETOOL="$PWD/build/appimagetool" RUNTIME="$PWD/build/runtime" ./build_linux.sh
+          python3 -I tools/mktestdisc.py build/test.iso
+      - name: smoke test
+        timeout-minutes: 10
+        run: |
+          bin=build/littleplanet
+          ai="build/${{ matrix.file }}"
+          "$bin" --version
+          file "$bin"
+          ldd "$bin"
+          ! ldd "$bin" | grep -i -e sdl -e freetype
+          objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+          APPIMAGE_EXTRACT_AND_RUN=1 "$ai" --version | grep -q "Little Planet"
+          desktop-file-validate build/AppDir/littleplanet.desktop
+          ls build/AppDir/usr/share/licenses/littleplanet
+          timeout 120 "$bin" --frames 120 --hashlog build/h1.txt build/test.iso
+          timeout 120 "$bin" --frames 120 --hashlog build/h2.txt build/test.iso
+          cmp build/h1.txt build/h2.txt
+      - name: ui smoke test
+        timeout-minutes: 15
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp & sleep 3
+          export DISPLAY=:99
+          timeout -s KILL 120 build/littleplanet --uitest build/ut build/test.iso || true
+          rm -f preview_cache.bin
+          for f in build/ut_*.bmp; do convert "$f" -alpha off "${f%.bmp}.png"; done
+          ls build/ut_*.png
+          test -f build/ut_08_controls.png
+      - name: install test
+        timeout-minutes: 10
+        run: |
+          Xvfb :98 -screen 0 1920x1080x24 -nolisten tcp & sleep 3
+          export DISPLAY=:98 HOME="$(mktemp -d)" APPIMAGE_EXTRACT_AND_RUN=1
+          mkdir -p "$HOME/Desktop"
+          ai="$PWD/build/${{ matrix.file }}"
+          inst="$HOME/Applications/littleplanet.AppImage"
+          data="$HOME/.local/share/littleplanet"
+          shot() { import -window root "build/ut_$1.png"; }
+          stop() { pkill -KILL -x AppRun || true; sleep 2; }
+          press() { xdotool search --sync --name "$1" windowfocus --sync key "$2"; }
+          "$ai" & sleep 12; shot 20_install
+          press "Install Little Planet" Return; sleep 4; shot 21_installed
+          test -x "$inst"
+          cat "$HOME/.local/share/applications/littleplanet.desktop"
+          desktop-file-validate "$HOME/.local/share/applications/littleplanet.desktop"
+          test -s "$HOME/.local/share/icons/hicolor/256x256/apps/littleplanet.png"
+          test -x "$HOME/Desktop/littleplanet.desktop"
+          cat "$data/install_path"
+          press "Install Little Planet" Escape; sleep 2; stop
+          "$inst" & sleep 12; shot 22_discwiz
+          press "Little Planet" Return; sleep 3; shot 23_nopicker
+          stop
+          mkdir -p "$data/disc"; cp build/test.iso "$data/disc/test.iso"; echo test.iso > "$data/disc/disc.txt"
+          "$inst" & sleep 20; shot 24_installed_launcher
+          stop
+          LITTLEPLANET_UNINSTALL=1 "$inst" & sleep 12; shot 25_uninstall
+          press "Uninstall Little Planet" Return; sleep 3; shot 26_removed
+          press "Uninstall Little Planet" Escape; sleep 2; stop
+          test ! -e "$inst"
+          test ! -e "$HOME/.local/share/applications/littleplanet.desktop"
+          test ! -e "$HOME/Desktop/littleplanet.desktop"
+          test ! -e "$HOME/.local/share/icons/hicolor/256x256/apps/littleplanet.png"
+          test -f "$data/disc/test.iso"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uitest-linux-${{ matrix.arch }}
+          path: build/ut_*.png
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: littleplanet-linux-${{ matrix.arch }}
+          path: build/${{ matrix.file }}
+
+  release:
+    needs: [windows, macos, linux]
+    if: always() && github.ref == 'refs/heads/main' && needs.windows.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view 1.0 >/dev/null 2>&1 || gh release create 1.0 --title "1.0" --notes "Run littleplanet.exe to install. You need your own Sonic CD (Mega-CD) disc image: cue/bin, chd, iso or ccd."
+          gh release upload 1.0 dist/littleplanet.exe --clobber
+          notes="Windows: run littleplanet.exe to install."
+          if [ -f dist/littleplanet-macos.dmg ]; then
+            gh release upload 1.0 dist/littleplanet-macos.dmg --clobber
+            notes="$notes Mac: open littleplanet-macos.dmg and run Little Planet to install. It isn't notarized, so the first time right-click it and pick Open (macOS 15: System Settings > Privacy & Security > Open Anyway)."
+          fi
+          if [ -f dist/littleplanet-linux.AppImage ]; then
+            gh release upload 1.0 dist/littleplanet-linux.AppImage --clobber
+            notes="$notes Linux: make littleplanet-linux.AppImage executable (chmod +x) and run it to install."
+          fi
+          if [ -f dist/littleplanet-linux-aarch64.AppImage ]; then
+            gh release upload 1.0 dist/littleplanet-linux-aarch64.AppImage --clobber
+            notes="$notes ARM Linux: use littleplanet-linux-aarch64.AppImage."
+          fi
+          gh release edit 1.0 --notes "$notes You need your own Sonic CD (Mega-CD) disc image: cue/bin, chd, iso or ccd."
+          git tag -f 1.0
+          git push -f origin refs/tags/1.0
