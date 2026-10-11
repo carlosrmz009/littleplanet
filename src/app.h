@@ -1,11 +1,13 @@
 #pragma once
 #include "mcd.h"
 #include "gfx.h"
+#include "movie.h"
 
 enum { FILT_NEAREST, FILT_SMOOTH, FILT_PIXELART, FILT_CRT, FILT_COUNT };
 enum { MASK_APERTURE, MASK_SHADOW, MASK_SLOT, MASK_COUNT };
 enum { ASPECT_4_3, ASPECT_SQUARE, ASPECT_16_9_AMBIENT, ASPECT_16_9_STRETCH, ASPECT_COUNT };
 enum { SOUND_ACCURATE, SOUND_CLEAN };
+enum { INTRO_REMASTERED, INTRO_ORIGINAL };
 
 enum { BIND_UP, BIND_DOWN, BIND_LEFT, BIND_RIGHT, BIND_A, BIND_B, BIND_C, BIND_START, BIND_X, BIND_Y, BIND_Z, BIND_MODE,
        BIND_FAST, BIND_SAVE, BIND_LOAD, BIND_MENU, BIND_COUNT };
@@ -15,7 +17,7 @@ extern const char *bind_names[BIND_COUNT];
 typedef struct {
   int filter, crt_mask, crt_curvature, crt_scanlines, crt_glow;
   int aspect, integer_scale, fullscreen, vsync, show_fps;
-  int sound, volume, ff_speed, fast_cd, six_button;
+  int sound, volume, ff_speed, fast_cd, six_button, intro;
   int key[BIND_COUNT];
   int pad[BIND_COUNT];
 } Settings;
@@ -54,6 +56,8 @@ void video_upload_game(const u32 *pix, int w, int h);
 void video_draw_game(const Settings *s, Rect r, float u0, float v0, float u1, float v1);
 void video_draw_rgba(const u32 *pix, int w, int h, Rect r, bool blend);
 void video_present(void);
+bool video_can_draw_movie(void);
+void video_draw_movie(const MovieFrame *f, Rect r, float fade);
 int video_width(void), video_height(void);
 void scale_epx(const u32 *src, int w, int h, u32 *dst, int factor);
 
@@ -68,6 +72,13 @@ UiResult ui_frame(bool in_game);
 void ui_set_preview_frames(const u32 *scene[2], const int scene_w[2], const s16 *audio, int audio_frames);
 void osd_message(const char *fmt, ...);
 void osd_draw(double fps);
+
+// remastered opening (intro.c)
+void intro_reset(void);
+bool intro_step(double dt, s16 *audio, int *frames, int max);   // after each emulated frame
+bool intro_active(void);
+void intro_draw(Rect r);
+const char *intro_status(void);
 
 void audio_play_clip(const s16 *pcm, int frames);
 void audio_stop_clip(void);

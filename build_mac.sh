@@ -5,8 +5,11 @@ SDLCFG="${SDLCFG:-$PWD/build/sdl/bin/sdl2-config}"
 [ -x "$SDLCFG" ] || SDLCFG=sdl2-config
 FLAGS="-O2 -mmacosx-version-min=11.0"
 for a in ${ARCHS:-arm64 x86_64}; do FLAGS="$FLAGS -arch $a"; done
+FF="${FF:-$PWD/build/ffmpeg}"
+MOVIE=""
+[ -d "$FF/include" ] && MOVIE="-DLP_MOVIE -I$FF/include"
 CHD="-Ithird_party/libchdr/include -Ithird_party/libchdr/deps/lzma-26.02/include -Ithird_party/libchdr/deps/miniz-3.1.2 -Ithird_party/libchdr/deps/zstd-1.5.7"
-CFLAGS="$FLAGS -Isrc $("$SDLCFG" --cflags) $CHD -DGL_SILENCE_DEPRECATION -Wno-deprecated-declarations -Wno-unused-label"
+CFLAGS="$FLAGS -Isrc $("$SDLCFG" --cflags) $CHD $MOVIE -DGL_SILENCE_DEPRECATION -Wno-deprecated-declarations -Wno-unused-label"
 CXXFLAGS="$FLAGS -std=c++14"
 OBJ=build/obj/mac
 APP="build/Little Planet.app"
@@ -26,6 +29,11 @@ clang++ $FLAGS "$OBJ"/*.o $("$SDLCFG" --static-libs) \
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/littleplanet.iconset
 cp build/littleplanet "$APP/Contents/MacOS/littleplanet"
 cp res/Info.plist "$APP/Contents/Info.plist"
+if [ -d "$FF/lib" ]; then
+  mkdir -p "$APP/Contents/Frameworks" "$APP/Contents/Resources/licenses"
+  cp "$FF"/lib/*.dylib "$APP/Contents/Frameworks/"
+  cp "$FF"/licenses/* "$APP/Contents/Resources/licenses/"
+fi
 python3 -c "import struct,sys;d=open('res/littleplanet.ico','rb').read();e=max((struct.unpack('<BBBBHHII',d[6+16*i:22+16*i]) for i in range(struct.unpack('<H',d[4:6])[0])),key=lambda e:e[0] or 256);open(sys.argv[1],'wb').write(d[e[7]:e[7]+e[6]])" build/icon.png
 for s in 16 32 128 256 512; do
   sips -z $s $s build/icon.png --out "build/littleplanet.iconset/icon_${s}x${s}.png" >/dev/null

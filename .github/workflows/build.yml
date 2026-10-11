@@ -23,6 +23,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-windows-${{ hashFiles('tools/build_ffmpeg.sh') }}
+      - if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-gcc make nasm diffutils curl tar xz
+      - name: ffmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: ./tools/build_ffmpeg.sh build/ffmpeg
       - uses: ilammy/msvc-dev-cmd@v1
       - name: build
         shell: cmd
@@ -35,6 +50,9 @@ jobs:
           build\lp.exe --version > build\version.txt
           type build\version.txt
           findstr /c:"Little Planet" build\version.txt || exit /b 1
+          build\lp.exe --movie-check > build\movie.txt
+          type build\movie.txt
+          findstr /c:"ffmpeg ok" build\movie.txt || exit /b 1
           build\lp.exe --frames 120 --hashlog build\h1.txt build\test.iso
           build\lp.exe --frames 120 --hashlog build\h2.txt build\test.iso
           fc build\h1.txt build\h2.txt || exit /b 1
@@ -67,6 +85,16 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF -DCMAKE_INSTALL_PREFIX="$PWD/build/sdl"
           cmake --build build/sdlbuild -j 4
           cmake --install build/sdlbuild
+      - id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-macos-universal-11.0-${{ hashFiles('tools/build_ffmpeg.sh') }}
+      - name: ffmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: |
+          brew install nasm
+          ./tools/build_ffmpeg.sh build/ffmpeg
       - name: build
         run: |
           ./build_mac.sh
@@ -77,6 +105,8 @@ jobs:
           app="build/Little Planet.app"
           bin="$app/Contents/MacOS/littleplanet"
           "$bin" --version
+          "$bin" --movie-check
+          lipo -archs "$app/Contents/Frameworks/"libavcodec.*.dylib | grep -q x86_64
           lipo -archs "$bin" | grep -q arm64
           lipo -archs "$bin" | grep -q x86_64
           codesign --verify --deep --strict "$app"
@@ -145,7 +175,7 @@ jobs:
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxxf86vm-dev libxinerama-dev \
             libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev \
             libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev \
-            fonts-dejavu-core fonts-dejavu-extra xvfb xdotool imagemagick desktop-file-utils libgl1-mesa-dri
+            fonts-dejavu-core fonts-dejavu-extra xvfb xdotool imagemagick desktop-file-utils libgl1-mesa-dri nasm
       - id: deps-cache
         uses: actions/cache@v4
         with:
@@ -181,6 +211,14 @@ jobs:
           mkdir -p build/ft/licenses
           cp "freetype-$FT_VERSION/LICENSE.TXT" build/ft/licenses/FreeType.txt
           cp "freetype-$FT_VERSION/docs/FTL.TXT" build/ft/licenses/FTL.txt
+      - id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-linux-${{ matrix.arch }}-${{ hashFiles('tools/build_ffmpeg.sh') }}
+      - name: ffmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: ./tools/build_ffmpeg.sh build/ffmpeg
       - name: appimagetool
         run: |
           mkdir -p build
@@ -204,6 +242,8 @@ jobs:
           ! ldd "$bin" | grep -i -e sdl -e freetype
           objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
           APPIMAGE_EXTRACT_AND_RUN=1 "$ai" --version | grep -q "Little Planet"
+          APPIMAGE_EXTRACT_AND_RUN=1 "$ai" --movie-check
+          ls build/AppDir/usr/lib
           desktop-file-validate build/AppDir/littleplanet.desktop
           ls build/AppDir/usr/share/licenses/littleplanet
           timeout 120 "$bin" --frames 120 --hashlog build/h1.txt build/test.iso

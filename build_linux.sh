@@ -12,8 +12,15 @@ if [ -d "$FT" ]; then
 else
   FTC="$(pkg-config --cflags freetype2)" FTL="$(pkg-config --libs freetype2)"
 fi
+# FFmpeg for the remastered opening: build/ffmpeg (tools/build_ffmpeg.sh, bundled) or the system's headers
+FF="${FF:-$PWD/build/ffmpeg}"
+MOVIE=""
+if [ -d "$FF/include" ]; then MOVIE="-DLP_MOVIE -I$FF/include"
+elif pkg-config --exists libavformat libavcodec libavutil libswresample 2>/dev/null; then
+  MOVIE="-DLP_MOVIE $(pkg-config --cflags libavformat libavcodec libavutil libswresample)"
+fi
 CHD="-Ithird_party/libchdr/include -Ithird_party/libchdr/deps/lzma-26.02/include -Ithird_party/libchdr/deps/miniz-3.1.2 -Ithird_party/libchdr/deps/zstd-1.5.7"
-CFLAGS="-O2 -Isrc $("$SDLCFG" --cflags) $FTC $CHD"
+CFLAGS="-O2 -Isrc $("$SDLCFG" --cflags) $FTC $CHD $MOVIE"
 CXXFLAGS="-O2 -std=c++14"
 OBJ=build/obj/linux
 APPDIR=build/AppDir
@@ -79,7 +86,7 @@ for f in src/*.c src/sdl/*.c src/linux/*.c build/gen/*.c build/res.c third_party
   case "$f" in src/input.c|src/win32.c) ;; *) echo "$f" ;; esac
 done | xargs -P "$(nproc)" -I{} sh -c 'case "$1" in *.cpp) $CXX $CXXFLAGS -c "$1" -o "$OBJ/$(echo "$1" | tr / _).o" ;; *) $CC $CFLAGS -c "$1" -o "$OBJ/$(echo "$1" | tr / _).o" ;; esac' sh {}
 
-$CXX "$OBJ"/*.o $("$SDLCFG" --static-libs) $FTL -lGL -lm -o build/littleplanet
+$CXX "$OBJ"/*.o $("$SDLCFG" --static-libs) $FTL -lGL -lm -ldl -lpthread -o build/littleplanet
 
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/licenses/littleplanet"
 cp build/littleplanet "$APPDIR/usr/bin/littleplanet"
@@ -103,7 +110,11 @@ cp third_party/libchdr/LICENSE.txt "$L/libchdr.txt"
 cp third_party/ymfm/LICENSE "$L/ymfm.txt"
 cp third_party/dr_libs/LICENSE "$L/dr_libs.txt"
 cp third_party/stb/LICENSE "$L/stb.txt"
-for f in "$FT"/licenses/* build/sdl/licenses/*; do
+if [ -d "$FF/lib" ]; then
+  mkdir -p "$APPDIR/usr/lib"
+  cp "$FF"/lib/* "$APPDIR/usr/lib/"
+fi
+for f in "$FT"/licenses/* build/sdl/licenses/* "$FF"/licenses/*; do
   if [ -f "$f" ]; then cp "$f" "$L/"; fi
 done
 

@@ -9,6 +9,7 @@
 #include "cdc.h"
 #include "state.h"
 #include "cov.h"
+#include "movie.h"
 
 #define LP_VERSION "Little Planet 1.0"
 
@@ -97,6 +98,10 @@ int app_run(const char *disc);
 bool plat_home(void);
 const char *disc_wizard(void);
 const char *uitest_prefix;
+// --apptest PREFIX: the real app, straight into the game (after --state if given), screenshots of the
+// window at the --shot frames, everything sent to the speakers in PREFIX.wav, quits after --frames
+const char *apptest_prefix, *apptest_state;
+int apptest_shots[256], apptest_nshots, apptest_frames;
 
 int main(int argc, char **argv) {
   const char *disc = NULL, *shot_prefix = "shot", *dump = NULL, *wav_path = NULL, *state_in = NULL, *state_out = NULL, *cov_path = NULL;
@@ -104,6 +109,10 @@ int main(int argc, char **argv) {
   int frames = -1, shots[256], nshots = 0;
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "--version")) { puts(LP_VERSION); return 0; }
+    else if (!strcmp(argv[i], "--movie-check")) {   // can the remastered opening play? (CI checks the bundled FFmpeg)
+      if (movie_available()) { puts("ffmpeg ok"); return 0; }
+      printf("ffmpeg missing: %s\n", movie_error()); return 1;
+    }
     else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--shot") && i + 1 < argc) { char *p = argv[++i]; while (*p && nshots < 256) { shots[nshots++] = (int)strtol(p, &p, 10); if (*p == ',') p++; else break; } }
     else if (!strcmp(argv[i], "--shotprefix") && i + 1 < argc) shot_prefix = argv[++i];
@@ -114,12 +123,19 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--state") && i + 1 < argc) state_in = argv[++i];
     else if (!strcmp(argv[i], "--savestate") && i + 1 < argc) state_out = argv[++i];
     else if (!strcmp(argv[i], "--uitest") && i + 1 < argc) uitest_prefix = argv[++i];
+    else if (!strcmp(argv[i], "--apptest") && i + 1 < argc) apptest_prefix = argv[++i];
     else if (!strcmp(argv[i], "--debug")) mcd_debug(true);
     else if (!strcmp(argv[i], "--cov") && i + 1 < argc) cov_path = argv[++i];
     else if (!strncmp(argv[i], "-psn", 4)) {}
     else disc = argv[i];
   }
 
+  if (apptest_prefix) {
+    apptest_state = state_in; apptest_frames = frames; apptest_nshots = nshots;
+    memcpy(apptest_shots, shots, sizeof shots);
+    if (!disc) return 1;
+    return app_run(disc);
+  }
   if (frames < 0) {
     if (!disc) {
       if (!plat_home()) return 0;

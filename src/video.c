@@ -13,6 +13,9 @@ typedef char GLchar;
 #define GL_BGRA 0x80E1
 #define GL_TEXTURE0 0x84C0
 #define GL_GENERATE_MIPMAP 0x8191
+#define GL_UNPACK_ROW_LENGTH_ 0x0CF2
+#define GL_LUMINANCE8 0x8040
+#define GL_LUMINANCE16 0x8042
 #define F(ret, name, args) typedef ret (APIENTRY *PFN_##name) args; static PFN_##name name;
 F(GLuint, glCreateShader, (GLenum))
 F(void, glShaderSource, (GLuint, GLsizei, const GLchar **, const GLint *))
@@ -30,6 +33,7 @@ F(void, glUniform1f, (GLint, GLfloat))
 F(void, glUniform2f, (GLint, GLfloat, GLfloat))
 F(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat))
 F(void, glGenerateMipmap, (GLenum))
+F(void, glActiveTexture, (GLenum))
 typedef BOOL (WINAPI *PFN_wglSwapIntervalEXT)(int);
 static PFN_wglSwapIntervalEXT wglSwapIntervalEXT_;
 #undef F
@@ -40,9 +44,13 @@ static HDC dc; static HGLRC glrc;
 #define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
 #endif
+#include "movie.h"
+#ifndef GL_UNPACK_ROW_LENGTH_
+#define GL_UNPACK_ROW_LENGTH_ GL_UNPACK_ROW_LENGTH
+#endif
 
 static int win_w = 1, win_h = 1;
-static GLuint tex_game, tex_ui, prog_sharp, prog_crt, prog_ambient;
+static GLuint tex_game, tex_ui, prog_sharp, prog_crt, prog_ambient, prog_yuv, tex_yuv[3];
 static int game_w = 320, game_h = 224;
 static bool have_shaders;
 static int cur_vsync = -1;
@@ -108,6 +116,19 @@ static const char *FS_AMBIENT =
   "uniform sampler2D tex;\n"
   "void main() { vec3 c = texture2D(tex, gl_TexCoord[0].xy, 6.0).rgb * 0.45; gl_FragColor = vec4(c, 1.0); }\n";
 
+// Y'CbCr planes -> RGB; "scale" undoes 16-bit storage of 10/12-bit samples
+static const char *FS_YUV =
+  "#version 120\n"
+  "uniform sampler2D ty, tu, tv; uniform float scale; uniform float full; uniform float bt709; uniform float fade;\n"
+  "void main() {\n"
+  "  vec2 uv = gl_TexCoord[0].xy;\n"
+  "  float y = texture2D(ty, uv).r * scale, u = texture2D(tu, uv).r * scale - 0.5, v = texture2D(tv, uv).r * scale - 0.5;\n"
+  "  if (full < 0.5) { y = (y - 16.0 / 255.0) * (255.0 / 219.0); u *= 255.0 / 224.0; v *= 255.0 / 224.0; }\n"
+  "  vec3 c = bt709 > 0.5 ? vec3(y + 1.5748 * v, y - 0.1873 * u - 0.4681 * v, y + 1.8556 * u)\n"
+  "                       : vec3(y + 1.4020 * v, y - 0.3441 * u - 0.7141 * v, y + 1.7720 * u);\n"
+  "  gl_FragColor = vec4(clamp(c, 0.0, 1.0) * fade, 1.0);\n"
+  "}\n";
+
 static GLuint compile(const char *fs) {
   GLuint v = glCreateShader(GL_VERTEX_SHADER), f = glCreateShader(GL_FRAGMENT_SHADER);
   glShaderSource(v, 1, &VS, NULL); glCompileShader(v);
@@ -121,10 +142,10 @@ static GLuint compile(const char *fs) {
 
 static void video_setup(void) {
   if (have_shaders) {
-    prog_sharp = compile(FS_SHARP); prog_crt = compile(FS_CRT); prog_ambient = compile(FS_AMBIENT);
+    prog_sharp = compile(FS_SHARP); prog_crt = compile(FS_CRT); prog_ambient = compile(FS_AMBIENT); prog_yuv = compile(FS_YUV);
     have_shaders = prog_sharp && prog_crt;
   }
-  glGenTextures(1, &tex_game); glGenTextures(1, &tex_ui);
+  glGenTextures(1, &tex_game); glGenTextures(1, &tex_ui); glGenTextures(3, tex_yuv);
   glEnable(GL_TEXTURE_2D);
 }
 
@@ -140,7 +161,7 @@ bool video_init(HWND w) {
 #define L(name) name = (PFN_##name)wglGetProcAddress(#name)
   L(glCreateShader); L(glShaderSource); L(glCompileShader); L(glGetShaderiv); L(glGetShaderInfoLog); L(glCreateProgram);
   L(glAttachShader); L(glLinkProgram); L(glGetProgramiv); L(glUseProgram); L(glGetUniformLocation); L(glUniform1i);
-  L(glUniform1f); L(glUniform2f); L(glUniform4f); L(glGenerateMipmap);
+  L(glUniform1f); L(glUniform2f); L(glUniform4f); L(glGenerateMipmap); L(glActiveTexture);
 #undef L
   wglSwapIntervalEXT_ = (PFN_wglSwapIntervalEXT)wglGetProcAddress("wglSwapIntervalEXT");
   have_shaders = glCreateShader && glUseProgram;
@@ -248,6 +269,54 @@ void video_draw_rgba(const u32 *pix, int w, int h, Rect r, bool blend) {
   glColor4f(1, 1, 1, 1);
   quad(r.x, r.y, r.w, r.h, 0, 0, 1, 1);
   if (blend) glDisable(GL_BLEND);
+}
+
+bool video_can_draw_movie(void) { return have_shaders && prog_yuv; }
+
+// a movie picture, as large as fits in r keeping its shape
+void video_draw_movie(const MovieFrame *f, Rect r, float fade) {
+  static u32 shown = ~0u; static int tw[3], th[3], tdepth;
+  if (!f || !prog_yuv) return;
+  bool wide = f->depth > 8;
+  if (f->serial != shown) {
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    for (int i = 0; i < 3; i++) {
+      int w = i ? f->cw : f->w, h = i ? f->ch : f->h;
+      glBindTexture(GL_TEXTURE_2D, tex_yuv[i]);
+      glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_FALSE);
+      glPixelStorei(GL_UNPACK_ROW_LENGTH_, f->stride[i] / (wide ? 2 : 1));
+      if (tw[i] != w || th[i] != h || tdepth != f->depth) {
+        glTexImage2D(GL_TEXTURE_2D, 0, wide ? GL_LUMINANCE16 : GL_LUMINANCE8, w, h, 0, GL_LUMINANCE, wide ? GL_UNSIGNED_SHORT : GL_UNSIGNED_BYTE, f->plane[i]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        tw[i] = w; th[i] = h;
+      } else
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_LUMINANCE, wide ? GL_UNSIGNED_SHORT : GL_UNSIGNED_BYTE, f->plane[i]);
+    }
+    tdepth = f->depth;
+    glPixelStorei(GL_UNPACK_ROW_LENGTH_, 0);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    shown = f->serial;
+  }
+  double par = (double)f->w / f->h;
+  int w = r.w, h = (int)(r.w / par + 0.5);
+  if (h > r.h) { h = r.h; w = (int)(r.h * par + 0.5); }
+  int x = r.x + (r.w - w) / 2, y = r.y + (r.h - h) / 2;
+  glUseProgram(prog_yuv);
+  for (int i = 0; i < 3; i++) { glActiveTexture(GL_TEXTURE0 + i); glBindTexture(GL_TEXTURE_2D, tex_yuv[i]); }
+  glActiveTexture(GL_TEXTURE0);
+  glUniform1i(glGetUniformLocation(prog_yuv, "ty"), 0);
+  glUniform1i(glGetUniformLocation(prog_yuv, "tu"), 1);
+  glUniform1i(glGetUniformLocation(prog_yuv, "tv"), 2);
+  glUniform1f(glGetUniformLocation(prog_yuv, "scale"), wide ? 65535.0f / ((1 << f->depth) - 1) : 1.0f);
+  glUniform1f(glGetUniformLocation(prog_yuv, "full"), f->full_range ? 1.0f : 0.0f);
+  glUniform1f(glGetUniformLocation(prog_yuv, "bt709"), f->bt709 ? 1.0f : 0.0f);
+  glUniform1f(glGetUniformLocation(prog_yuv, "fade"), fade);
+  glColor4f(1, 1, 1, 1);
+  quad(x, y, w, h, 0, 0, 1, 1);
+  glUseProgram(0);
 }
 
 void video_read(u32 *dst) {

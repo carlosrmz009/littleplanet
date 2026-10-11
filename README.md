@@ -59,6 +59,23 @@ Saves (the Mega-CD's backup RAM) go to `backup_ram.bin` there. Uninstalling keep
   the Z80 passes all 1.6M cases (undocumented flags, WZ, Q, timing), the 68000 all of the 1M cases
   apart from a few undocumented DIVS/ASR corner cases and address errors.
 
+### Remastered opening
+
+By default the opening animation is [LuanUP](https://www.youtube.com/@LuanUP)'s
+[4K 60 fps remaster](https://www.youtube.com/watch?v=O7ehCx2RC2A) of the Japanese opening, shown full screen (16:9)
+in place of the original FMV. It isn't included; to use it, download it once with [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+(which also needs [ffmpeg](https://ffmpeg.org/download.html) on your PATH) and put it in the data folder as `intro.mkv`:
+
+```bash
+yt-dlp -S "res:2160,fps,vcodec:vp9,acodec:opus" --merge-output-format mkv -o intro.mkv "https://www.youtube.com/watch?v=O7ehCx2RC2A"
+```
+
+The game's own FMV keeps running behind it (hidden and muted), so Start skips it, it plays again in the attract loop,
+and save states work as usual. The remaster is synced to the disc: its first frame lands on the frame the original
+shows its first picture, and it fades out where the animation ends (1:30). **Setup → Intro → Original** brings back
+the game's own opening. Playback uses a small LGPL build of [FFmpeg](https://ffmpeg.org) that ships with the game
+(VP9, H.264 and HEVC video; Opus and AAC sound).
+
 ### Extras
 
 The setup menu has a live preview. Esc, Home or Select+Start opens it in game.
@@ -68,6 +85,7 @@ The setup menu has a live preview. Esc, Home or Select+Start opens it in game.
 | Filter | Sharp, Smooth, Scale4x, or CRT (grille/shadow/slot mask, scanlines, glow, curvature) |
 | Aspect | 4:3 (as on a TV), square pixels, 16:9 fill (blurred sides), 16:9 stretch |
 | Sound | Clean, or Accurate: adds the Model 1 Mega Drive's low-pass on FM and PSG (CD audio is never filtered) |
+| Intro | Remastered (LuanUP's 4K remaster, see above) or Original |
 | Controller | 3 button (default, what Sonic CD was made for) or 6 button |
 | Misc | Integer scaling, fullscreen, VSync, FPS counter, volume, fast-forward speed |
 
@@ -90,10 +108,24 @@ Remap anything under *Controls*. Xbox pads, DualShock 4 / DualSense, Switch Pro 
 **macOS:** Python 3, Xcode command line tools, SDL2.
 **Linux:** Python 3, gcc/g++, SDL2, FreeType, DejaVu fonts. Packaging the AppImage also needs `appimagetool`.
 
+For the remastered opening, build FFmpeg once with `tools/build_ffmpeg.sh build/ffmpeg` (needs nasm; on Windows run it
+from an MSYS2 MINGW64 shell). The build scripts pick it up from `build/ffmpeg` and bundle it; without it the game
+builds and runs the same, with only the original opening.
+
 ```bash
 ./build_linux.sh      # or ./build_mac.sh, or build.bat
 build/littleplanet path/to/sonic.cue
 ```
+
+### Matching build
+
+```bash
+tools/decomp.sh path/to/sonic.cue     # extract, reassemble asm/, compare with the disc
+```
+
+`asm/` is a disassembly of every executable file on the disc (boot program, main-CPU MMDs, sub-CPU programs): code
+only, seeded from runtime coverage (`--cov`) and followed by recursive descent. Graphics, sound and level data stay
+on your disc and are pulled in at build time. All 112 files reassemble byte-identical to the Japanese release.
 
 CI ([build.yml](.github/workflows/build.yml)) builds all four targets and tests them against a tiny homebrew
 test disc (`tools/mktestdisc.py`). Every push to `main` refreshes the release.
@@ -111,6 +143,8 @@ test disc (`tools/mktestdisc.py`). Every push to `main` refreshes the release.
 | `--state FILE` / `--savestate FILE` | load a state before / save one after a headless run |
 | `--dump PREFIX` | write RAM and VRAM at the end |
 | `--uitest PREFIX` | scripted walk through the launcher and game, saving the real OpenGL output |
+| `--apptest PREFIX` | the app straight into the game (after `--state`), window screenshots at the `--shot` frames, the sound in `PREFIX.wav`, quits after `--frames` |
+| `--movie-check` | say whether FFmpeg (for the remastered opening) can be loaded |
 | `--version` | print the version |
 
 `tools/disctool` (built from `tools/disctool.c`) lists, hashes and extracts disc images.
@@ -136,7 +170,9 @@ test disc (`tools/mktestdisc.py`). Every push to `main` refreshes the release.
 | Boot, title, opening FMV, gameplay | yes |
 | CD audio, PCM music, FM/PSG | yes |
 | Save states | yes, bit-exact |
-| Disassembly / matching rebuild / static recompiler | in progress |
+| Disassembly, matching rebuild | yes: all 112 executable files reassemble byte-identical |
+| Static recompiler | in progress |
+| Remastered opening (4K60, synced) | yes, with your own copy of the video |
 
 ## Contributing
 
@@ -155,13 +191,15 @@ src/
   cdc.c hle.c        CD drive/decoder, HLE BIOS
   asic.c             Mega-CD graphics ASIC
   disc.c version.c   disc images, known releases
+  movie.c intro.c    remastered opening: FFmpeg playback, synced to the CD drive
   app.c ui.c video.c config.c gfx.c discwiz.c update.c state.c
   win32.c input.c    Windows front end
   sdl/ mac/ linux/   SDL front end, platform installers
 installer/           Windows installer (littleplanet.exe)
 third_party/         libchdr, ymfm, dr_mp3, stb_vorbis
 tests/               CPU test-suite runners
-tools/               disctool, test disc generator, ISA tables
+asm/                 disassembly of every executable file on the disc (code only; data comes from your disc)
+tools/               disctool, disassembler/assembler, test disc generator, FFmpeg build
 ```
 
 ## Thanks
@@ -171,10 +209,14 @@ tools/               disctool, test disc generator, ISA tables
   [dr_libs](https://github.com/mackron/dr_libs), [stb](https://github.com/nothings/stb),
   [SDL2](https://www.libsdl.org/), [FreeType](https://freetype.org/), [DejaVu](https://dejavu-fonts.github.io/).
 * [SingleStepTests](https://github.com/SingleStepTests) for the CPU test suites.
+* [LuanUP](https://www.youtube.com/@LuanUP) for the remastered opening.
+* [FFmpeg](https://ffmpeg.org) (LGPL 2.1), which plays it.
 
 ## License
 
-[MIT](LICENSE) for the runtime, tools and installer. Third-party code keeps its own license (see `third_party/`).
+[MIT](LICENSE) for the runtime, tools and installer. Third-party code keeps its own license (see `third_party/`);
+the bundled FFmpeg libraries are LGPL 2.1 (`tools/build_ffmpeg.sh` builds them from the unmodified release).
+The remastered opening is LuanUP's work and isn't distributed with the game.
 Nothing extracted from a disc is covered.
 
 Not affiliated with or endorsed by Sega. Sonic the Hedgehog and Sonic CD are trademarks of Sega.

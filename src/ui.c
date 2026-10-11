@@ -32,6 +32,7 @@ static const char *aspects[] = { "4:3", "Square pixels", "16:9 fill", "16:9 stre
 static const char *onoff[] = { "Off", "On" };
 static const char *audios[] = { "Accurate", "Clean" };
 static const char *pads[] = { "3 button", "6 button" };
+static const char *intros[] = { "Remastered", "Original" };
 
 static Item items[32]; static int nitems;
 static void build_items(bool in_game) {
@@ -51,6 +52,7 @@ static void build_items(bool in_game) {
   ADD("VSync", IT_CHOICE, &cfg.vsync, 0, 1, 1, onoff, "No tearing.", -1, 0);
   ADD("Show FPS", IT_CHOICE, &cfg.show_fps, 0, 1, 1, onoff, "Frame counter in the corner.", -1, 0);
   ADD("Fast-forward", IT_SLIDER, &cfg.ff_speed, 2, 8, 1, NULL, "Speed while holding Tab.", -1, 0);
+  ADD("Intro", IT_CHOICE, &cfg.intro, 0, 1, 1, intros, cfg.intro == INTRO_REMASTERED ? intro_status() : "The game's own opening.", -1, 0);
   ADD("Controller", IT_CHOICE, &cfg.six_button, 0, 1, 1, pads, "Sonic CD was made for the 3 button pad.", -1, 0);
   ADD("Controls", IT_ACTION, NULL, 0, 0, 0, NULL, "Remap keys and pads.", -1, A_CONTROLS);
   if (in_game) ADD("Reset", IT_ACTION, NULL, 0, 0, 0, NULL, "Restart from power-on. Your save is kept.", -1, A_RESET);

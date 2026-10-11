@@ -40,6 +40,34 @@ static bool make_link(const wchar_t *lnk, const wchar_t *target) {
 static void reg_sz(const wchar_t *key, const wchar_t *name, const wchar_t *v) { RegSetKeyValueW(HKEY_CURRENT_USER, key, name, REG_SZ, v, (DWORD)(wcslen(v) + 1) * 2); }
 static void reg_dw(const wchar_t *key, const wchar_t *name, DWORD v) { RegSetKeyValueW(HKEY_CURRENT_USER, key, name, REG_DWORD, &v, 4); }
 
+// libraries shipped next to the game (FFmpeg for the remastered opening): resource 101 packs them as
+// "LPL1" then, per file, u16 name length, name, u32 size, data (tools/packlibs.py)
+static bool libs(bool write) {
+  HRSRC r = FindResourceW(NULL, MAKEINTRESOURCEW(101), (LPCWSTR)RT_RCDATA);
+  if (!r) return true;
+  DWORD n = SizeofResource(NULL, r); const unsigned char *p = LockResource(LoadResource(NULL, r));
+  if (!p || n < 4 || memcmp(p, "LPL1", 4)) return true;
+  bool ok = true;
+  for (DWORD o = 4; o + 2 <= n;) {
+    unsigned nl = p[o] | p[o + 1] << 8; o += 2;
+    if (o + nl + 4 > n) break;
+    char name[128]; wchar_t wname[128], path[MAX_PATH];
+    if (nl >= sizeof name) break;
+    memcpy(name, p + o, nl); name[nl] = 0; o += nl;
+    DWORD sz = p[o] | p[o + 1] << 8 | p[o + 2] << 16 | (DWORD)p[o + 3] << 24; o += 4;
+    if (o + sz > n) break;
+    MultiByteToWideChar(CP_UTF8, 0, name, -1, wname, 128);
+    join(path, dir, wname);
+    if (write) {
+      FILE *f = _wfopen(path, L"wb");
+      if (!f || fwrite(p + o, 1, sz, f) != sz) ok = false;
+      if (f) fclose(f);
+    } else DeleteFileW(path);
+    o += sz;
+  }
+  return ok;
+}
+
 static const char *install(void) {
   if (SHCreateDirectoryExW(NULL, dir, NULL) != ERROR_SUCCESS && GetFileAttributesW(dir) == INVALID_FILE_ATTRIBUTES) return "Can't create that folder. Pick another one.";
   HRSRC r = FindResourceW(NULL, MAKEINTRESOURCEW(100), (LPCWSTR)RT_RCDATA);
@@ -51,6 +79,7 @@ static const char *install(void) {
   if (!f) return "Can't write there. Close the game or pick another folder.";
   bool ok = fwrite(p, 1, n, f) == n; fclose(f);
   if (!ok) return "Ran out of space?";
+  if (!libs(true)) return "Can't write there. Close the game or pick another folder.";
   GetModuleFileNameW(NULL, self, MAX_PATH);
   if (_wcsicmp(self, un)) CopyFileW(self, un, FALSE);
   special(CSIDL_PROGRAMS, APP L".lnk", lnk); make_link(lnk, exe);
@@ -69,6 +98,7 @@ static const char *uninstall(void) {
   wchar_t exe[MAX_PATH], lnk[MAX_PATH];
   join(exe, dir, EXE);
   if (GetFileAttributesW(exe) != INVALID_FILE_ATTRIBUTES && !DeleteFileW(exe)) return "Close the game first.";
+  libs(false);
   special(CSIDL_PROGRAMS, APP L".lnk", lnk); DeleteFileW(lnk);
   special(CSIDL_DESKTOPDIRECTORY, APP L".lnk", lnk); DeleteFileW(lnk);
   RegDeleteTreeW(HKEY_CURRENT_USER, UNKEY); RegDeleteTreeW(HKEY_CURRENT_USER, APKEY);

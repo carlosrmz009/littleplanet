@@ -19,7 +19,12 @@ static const char *disc_path;
 static s16 ring[16384 * 2]; static int ring_n;
 static const s16 *clip; static int clip_len, clip_pos;
 
+extern const char *apptest_prefix, *apptest_state;
+extern int apptest_shots[256], apptest_nshots, apptest_frames;
+static FILE *apptest_wav; static u32 apptest_bytes;
+
 static void audio_ring_add(const s16 *s, int n) {
+  if (apptest_wav) { fwrite(s, 4, n, apptest_wav); apptest_bytes += n * 4; }
   int room = 16384 - ring_n; if (n > room) n = room;
   int vol = cfg.volume * 256 / 100;
   for (int i = 0; i < n * 2; i++) ring[ring_n * 2 + i] = (s16)((s[i] * vol) >> 8);
@@ -190,12 +195,45 @@ static void ut_game(void) {
   }
 }
 
+static void apptest_step(int frames) {
+  static int done, k;
+  done += frames;
+  for (; k < apptest_nshots && done > apptest_shots[k]; k++) {
+    u32 *buf = malloc((size_t)video_width() * video_height() * 4);
+    video_read(buf);
+    char p[512]; snprintf(p, sizeof p, "%s_%05d.bmp", apptest_prefix, apptest_shots[k]);
+    write_bmp32(p, buf, video_width(), video_height());
+    free(buf);
+  }
+  if (apptest_frames > 0 && done >= apptest_frames) {
+    if (apptest_wav) {
+      u8 h[44] = "RIFF....WAVEfmt \x10\0\0\0\1\0\2\0....\0\0\0\0\4\0\x10\0data....";
+      u32 rate = 48000, br = 48000 * 4, rl = apptest_bytes + 36;
+      memcpy(h + 4, &rl, 4); memcpy(h + 24, &rate, 4); memcpy(h + 28, &br, 4); memcpy(h + 40, &apptest_bytes, 4);
+      fseek(apptest_wav, 0, SEEK_SET); fwrite(h, 1, 44, apptest_wav); fclose(apptest_wav); apptest_wav = NULL;
+    }
+    app_quit = true;
+  }
+}
+
 static void screenshot(const u32 *pix, int w, int h) {
   plat_mkdir("screenshots");
   time_t now = time(NULL); struct tm t = *localtime(&now);
   char p[128]; snprintf(p, sizeof p, "screenshots/sonic_%04d%02d%02d_%02d%02d%02d.bmp", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
   write_bmp32(p, pix, w, h);
   osd_message("Screenshot saved: %s", p);
+}
+
+// one emulated frame; while the remastered opening is up, its sound replaces the game's
+static void run_frame(bool keep_audio) {
+  static s16 tmp[8192], mv[8192];
+  const double frame_time = (double)MCLK_PER_LINE * LINES_PER_FRAME / MCLK_HZ;
+  mcd_run_frame();
+  int mn, n;
+  bool intro = intro_step(frame_time, mv, &mn, 4096);
+  while ((n = audio_fetch(tmp, 4096)) > 0) if (keep_audio && !intro) audio_ring_add(tmp, n);
+  if (keep_audio && intro) audio_ring_add(mv, mn);
+  if (keep_audio) audio_submit();
 }
 
 static void bram_flush(void) { if (bram_dirty()) bram_save("backup_ram.bin"); }
@@ -238,6 +276,7 @@ int app_run(const char *disc) {
 
     if (mode == M_MENU) {
       UiResult res = ui_frame(in_game);
+      if (apptest_prefix) res = UI_START_GAME;
       if (uitest_prefix) { ut_capture(); if (ut_menu()) res = UI_START_GAME; }
       audio_clip_pump();
       video_present();
@@ -252,6 +291,13 @@ int app_run(const char *disc) {
             app_quit = true; continue;
           }
           bram_load("backup_ram.bin");
+          if (apptest_prefix && apptest_state && !app_load_state(apptest_state)) { fprintf(stderr, "can't load %s\n", apptest_state); app_quit = true; continue; }
+          intro_reset();
+          if (apptest_prefix) {
+            char p[512]; snprintf(p, sizeof p, "%s.wav", apptest_prefix);
+            apptest_wav = fopen(p, "wb");
+            if (apptest_wav) { u8 z[44] = {0}; fwrite(z, 1, 44, apptest_wav); }
+          }
           audio_drain();
           in_game = true;
         }
@@ -278,19 +324,15 @@ int app_run(const char *disc) {
       if (ff) {
         for (int i = 0; i < (uitest_prefix ? 20 : cfg.ff_speed); i++) {
           if (uitest_prefix) io_set_pad(0, pv_pad(ut_game_frames + frames));
-          mcd_run_frame(); frames++;
+          run_frame(false); frames++;
         }
         audio_drain();
         t0 = plat_time(); next_frame = 0;
       } else if (snd) {
-        while (audio_queued() < ABUF_FRAMES * 3 && frames < 4) {
-          mcd_run_frame(); frames++;
-          s16 tmp[8192]; int n;
-          while ((n = audio_fetch(tmp, 4096)) > 0) { audio_ring_add(tmp, n); audio_submit(); }
-        }
+        while (audio_queued() < ABUF_FRAMES * 3 && frames < 4) { run_frame(true); frames++; }
       } else {
         double el = plat_time() - t0;
-        while (next_frame <= el && frames < 4) { mcd_run_frame(); frames++; next_frame += frame_time; }
+        while (next_frame <= el && frames < 4) { run_frame(apptest_wav != NULL); frames++; next_frame += frame_time; }
         if (el - next_frame > 0.25) next_frame = el;
         audio_drain();
       }
@@ -306,9 +348,11 @@ int app_run(const char *disc) {
     double dt = now - fps_t;
     if (dt >= 0.5) { fps = fps_frames / dt; fps_frames = 0; fps_t = now; }
     video_clear(0, 0, 0);
-    video_draw_game(&cfg, (Rect){ 0, 0, video_width(), video_height() }, 0, 0, 1, 1);
+    if (intro_active()) intro_draw((Rect){ 0, 0, video_width(), video_height() });
+    else video_draw_game(&cfg, (Rect){ 0, 0, video_width(), video_height() }, 0, 0, 1, 1);
     osd_draw(fps);
     if (uitest_prefix) { ut_capture(); ut_game(); ut_game_frames += frames; }
+    if (apptest_prefix) apptest_step(frames);
     video_present();
     if (!frames && !cfg.vsync) Sleep(1);
   }

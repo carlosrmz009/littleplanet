@@ -27,7 +27,7 @@ void cfg_defaults(Settings *s) {
 }
 
 #define FIELDS(X) X(filter) X(crt_mask) X(crt_curvature) X(crt_scanlines) X(crt_glow) X(aspect) X(integer_scale) \
-  X(fullscreen) X(vsync) X(show_fps) X(sound) X(volume) X(ff_speed) X(fast_cd) X(six_button)
+  X(fullscreen) X(vsync) X(show_fps) X(sound) X(volume) X(ff_speed) X(fast_cd) X(six_button) X(intro)
 
 void cfg_load(const char *path) {
   cfg_defaults(&cfg);
@@ -50,6 +50,7 @@ void cfg_load(const char *path) {
   if (cfg.filter < 0 || cfg.filter >= FILT_COUNT) cfg.filter = FILT_SMOOTH;
   if (cfg.aspect < 0 || cfg.aspect >= ASPECT_COUNT) cfg.aspect = ASPECT_4_3;
   if (cfg.sound < 0 || cfg.sound > 1) cfg.sound = SOUND_CLEAN;
+  if (cfg.intro < 0 || cfg.intro > 1) cfg.intro = INTRO_REMASTERED;
 }
 
 void cfg_save(const char *path) {
