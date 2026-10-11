@@ -88,7 +88,9 @@ LGPL build of [FFmpeg](https://ffmpeg.org) that ships with the game.
 
 <img src="res/screens/wide.png" width="856" alt="Palmtree Panic in widescreen">
 
-**Setup → Aspect → True16:9** Simply the best way to enjoy Sonic CD on PC.
+**Setup → Aspect → True16:9**
+<br>
+Simply the best way to enjoy Sonic CD on PC.
 
 ### Extras
 
