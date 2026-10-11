@@ -123,7 +123,12 @@ static void sticker(void) {
   float sy = y + h - 2, sh = 30;
   vg_begin();
   vg_rect(x + 18, sy, w - 36, sh);
-  for (float tx = x + 18; tx < x + w - 18 - 1; tx += 13) { float p[6] = {tx, sy + sh - 0.5f, tx + 6.5f, sy + sh + 9, tx + 13, sy + sh - 0.5f}; vg_poly(p, 3); }
+  int teeth = (int)((w - 36) / 13);
+  float tooth = (w - 36) / teeth;   // whole teeth, ending with the strip
+  for (int k = 0; k < teeth; k++) {
+    float tx = x + 18 + k * tooth, p[6] = {tx, sy + sh - 0.5f, tx + tooth / 2, sy + sh + 9, tx + tooth, sy + sh - 0.5f};
+    vg_poly(p, 3);
+  }
   vg_fill(A_INK);
   float tw = spaced(VF_SLAB, 17, 0, 0, 7, 0, "IN THE WORLD", false);
   spaced(VF_SLAB, 17, -tw / 2, sy + 23, 7, A_PAPER, "IN THE WORLD", true);
