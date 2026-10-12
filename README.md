@@ -1,4 +1,4 @@
-<p align="center"><img src="res/logo_sq.png" width="480" alt="Little Planet"></p>
+<p align="center"><img src="res/logo_sq.png" width="240" alt="Little Planet"></p>
 
 <h1 align="center">Little Planet</h1>
 
