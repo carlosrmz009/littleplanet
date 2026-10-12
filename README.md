@@ -257,4 +257,15 @@ the bundled FFmpeg libraries are LGPL 2.1 (`tools/build_ffmpeg.sh` builds them f
 The remastered opening is LuanUP's work, included with their permission; it isn't covered by the MIT license.
 Nothing extracted from a disc is covered.
 
+**Unofficial fan project and intellectual property notice**
+
+This is an independent, unofficial software project. It is not affiliated with, endorsed by, or sponsored by SEGA.
+
+Sonic The Hedgehog and all associated trademarks and copyrighted game content belong to their respective rights holders. Any gameplay screenshots included in this README are used to document and compare technical features of the software.
+
+No original game ROMs or disc images are distributed with this project. Users must provide their own game copies.
+
+This notice does not claim ownership of third-party intellectual property or imply permission to use it.
+
+
 Not affiliated with or endorsed by Sega. Sonic the Hedgehog and Sonic CD are trademarks of Sega.
