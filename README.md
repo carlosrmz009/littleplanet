@@ -3,7 +3,7 @@
 <h1 align="center">Little Planet</h1>
 
 <p align="center">
-<b> Sonic CD (Mega-CD) decomp / PC port, built for fidelity </b>
+<b> Sonic CD (Mega-CD) recompilation / PC port, built for fidelity </b>
 <br>
 Windows, macOS and Linux.
 </p>
