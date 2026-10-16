@@ -174,6 +174,7 @@ void video_present(void) { SwapBuffers(dc); }
 #else
 bool video_init(void) { have_shaders = true; video_setup(); return true; }
 #endif
+void video_sync(void) { glFinish(); }
 
 void video_resize(int w, int h) { win_w = w > 0 ? w : 1; win_h = h > 0 ? h : 1; }
 int video_width(void) { return win_w; }

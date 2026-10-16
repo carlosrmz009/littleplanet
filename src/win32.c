@@ -12,6 +12,7 @@ static RECT windowed_rect;
 
 #define NABUF 8
 static HWAVEOUT wo; static WAVEHDR wh[NABUF]; static s16 abuf[NABUF][ABUF_FRAMES * 2];
+static DWORD submitted;   // sample frames handed to the device (its played count is compared with this)
 
 bool snd_open(void) {
   WAVEFORMATEX fmt = { WAVE_FORMAT_PCM, 2, 48000, 48000 * 4, 4, 16, 0 };
@@ -19,7 +20,16 @@ bool snd_open(void) {
   for (int i = 0; i < NABUF; i++) { wh[i].lpData = (LPSTR)abuf[i]; wh[i].dwBufferLength = ABUF_FRAMES * 4; wh[i].dwFlags = WHDR_DONE; }
   return true;
 }
-int snd_busy(void) { int n = 0; for (int i = 0; i < NABUF; i++) if (!(wh[i].dwFlags & WHDR_DONE)) n++; return n * ABUF_FRAMES; }
+// frames queued and not played yet, to the sample (whole buffers would be too coarse to pace by)
+int snd_busy(void) {
+  MMTIME t = { TIME_SAMPLES };
+  if (waveOutGetPosition(wo, &t, sizeof t) == MMSYSERR_NOERROR && t.wType == TIME_SAMPLES) {
+    int n = (int)(submitted - t.u.sample);
+    if (n >= 0 && n <= NABUF * ABUF_FRAMES) return n;
+  }
+  int n = 0; for (int i = 0; i < NABUF; i++) if (!(wh[i].dwFlags & WHDR_DONE)) n++;
+  return n * ABUF_FRAMES;
+}
 bool snd_put(const s16 *pcm, int frames) {
   for (int i = 0; i < NABUF; i++) {
     WAVEHDR *h = &wh[i];
@@ -28,6 +38,7 @@ bool snd_put(const s16 *pcm, int frames) {
     memcpy(abuf[i], pcm, frames * 4);
     h->dwFlags = 0; h->dwBufferLength = frames * 4;
     waveOutPrepareHeader(wo, h, sizeof *h); waveOutWrite(wo, h, sizeof *h);
+    submitted += frames;
     return true;
   }
   return false;

@@ -1,1 +1,4 @@
 1 ICON "res/littleplanet.ico"
+#define VER_DESC "Little Planet (Sonic CD)"
+#define VER_NAME "Little Planet.exe"
+#include "res/winver.rc"

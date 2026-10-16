@@ -7,6 +7,7 @@
 #include "wide.h"
 #include "vdp.h"
 #include <time.h>
+#include <math.h>
 
 bool app_quit;
 extern const char *uitest_prefix;
@@ -25,8 +26,32 @@ extern const char *apptest_prefix, *apptest_state;
 extern int apptest_shots[256], apptest_nshots, apptest_frames;
 static FILE *apptest_wav; static u32 apptest_bytes;
 
+// Frames are paced by the display (see the main loop), so the sound is nudged to match: resampled by at
+// most 0.5% (inaudible) to keep the device's queue near AQ_TARGET. Linear interpolation is plenty that close to 1.
+#define AQ_TARGET (ABUF_FRAMES * 3)
+static double drc_step = 1, drc_pos; static s16 drc_last[2];
+static int drc_resample(const s16 *in, int n, s16 *out, int max) {
+  int k = 0;
+  while (k < max) {   // drc_pos indexes [drc_last, in[0], in[1], ...]
+    int i = (int)drc_pos;
+    if (i + 1 > n) break;
+    float f = (float)(drc_pos - i);
+    const s16 *a = i ? in + (i - 1) * 2 : drc_last, *b = in + i * 2;
+    out[k * 2] = (s16)(a[0] + (b[0] - a[0]) * f);
+    out[k * 2 + 1] = (s16)(a[1] + (b[1] - a[1]) * f);
+    k++; drc_pos += drc_step;
+  }
+  drc_pos -= n;
+  if (drc_pos < 0) drc_pos = 0;
+  if (n) memcpy(drc_last, in + (n - 1) * 2, 4);
+  return k;
+}
+
 static void audio_ring_add(const s16 *s, int n) {
   if (apptest_wav) { fwrite(s, 4, n, apptest_wav); apptest_bytes += n * 4; }
+  static s16 rs[8192 * 2];
+  if (n > 8000) n = 8000;
+  n = drc_resample(s, n, rs, 8192); s = rs;
   int room = 16384 - ring_n; if (n > room) n = room;
   int vol = cfg.volume * 256 / 100;
   for (int i = 0; i < n * 2; i++) ring[ring_n * 2 + i] = (s16)((s[i] * vol) >> 8);
@@ -39,6 +64,13 @@ static void audio_submit(void) {
   }
 }
 static int audio_queued(void) { return snd_busy() + ring_n; }
+// once per emulated frame: the resampling step from how full the queue is (smoothed)
+static void drc_update(void) {
+  static double fill = AQ_TARGET;
+  fill += (audio_queued() - fill) * 0.05;
+  double d = (fill - AQ_TARGET) / AQ_TARGET * 0.02;
+  drc_step = 1 + (d > 0.005 ? 0.005 : d < -0.005 ? -0.005 : d);
+}
 void audio_play_clip(const s16 *pcm, int frames) { clip = pcm; clip_len = frames; clip_pos = 0; }
 void audio_stop_clip(void) { clip = NULL; }
 static void audio_clip_pump(void) {
@@ -284,7 +316,29 @@ static void run_frame(bool keep_audio) {
   bool intro = intro_step(frame_time, mv, &mn, 4096);
   while ((n = audio_fetch(tmp, 4096)) > 0) if (keep_audio && !intro) audio_ring_add(tmp, n);
   if (keep_audio && intro) audio_ring_add(mv, mn);
-  if (keep_audio) audio_submit();
+  if (keep_audio) { audio_submit(); drc_update(); }
+}
+
+// Frame pacing. The game makes 59.92 frames a second and the display refreshes at its own rate. With VSync
+// on a display at a multiple of the game's rate (60, 120, 180, 240 Hz, or close: within what the sound's
+// resampling absorbs), one frame every N refreshes: perfectly even. Otherwise frames follow the clock (as
+// even as that refresh rate allows; VRR displays make it exact). The sound follows the frames (drc_*).
+static double refresh;     // measured seconds per refresh with VSync on
+static int refresh_n;      // refreshes measured
+static void refresh_measure(void) {
+  static double last;
+  double t = plat_time(), dt = t - last;
+  last = t;
+  if (!cfg.vsync) { refresh_n = 0; return; }
+  if (dt < 0.002 || dt > 0.05) return;   // a hitch, not the display
+  refresh = refresh_n ? refresh + (dt - refresh) * 0.02 : dt;
+  refresh_n++;
+}
+static int refresh_lock(double frame_time) {   // a frame every N refreshes, or 0: by the clock
+  if (!cfg.vsync || refresh_n < 120) return 0;
+  double r = frame_time / refresh;
+  int n = (int)(r + 0.5);
+  return n >= 1 && n <= 4 && fabs(r - n) < 0.004 * n ? n : 0;
 }
 
 static void bram_flush(void) { if (bram_dirty()) bram_save("backup_ram.bin"); }
@@ -397,13 +451,23 @@ int app_run(const char *disc) {
         }
         audio_drain();
         t0 = plat_time(); next_frame = 0;
-      } else if (snd) {
-        while (audio_queued() < ABUF_FRAMES * 3 && frames < 4) { run_frame(true); frames++; }
       } else {
-        double el = plat_time() - t0;
-        while (next_frame <= el && frames < 4) { run_frame(apptest_wav != NULL); frames++; next_frame += frame_time; }
-        if (el - next_frame > 0.25) next_frame = el;
-        audio_drain();
+        bool keep = snd || apptest_wav;
+        int every = refresh_lock(frame_time);
+        if (every) {
+          static int k;
+          int q = snd ? audio_queued() : AQ_TARGET;   // (a safety net: the resampling keeps it near AQ_TARGET)
+          if (++k >= every || q < ABUF_FRAMES / 2) {
+            k = 0;
+            if (q < AQ_TARGET * 5 / 2) { run_frame(keep); frames++; }
+          }
+          t0 = plat_time(); next_frame = 0;
+        } else {
+          double el = plat_time() - t0;
+          while (next_frame <= el && frames < 4) { run_frame(keep); frames++; next_frame += frame_time; }
+          if (el - next_frame > 0.25) next_frame = el;
+        }
+        if (!snd) audio_drain();
       }
     }
     {   // re-upload every pass: the texture is also used by the menu's monitor
@@ -423,6 +487,7 @@ int app_run(const char *disc) {
     if (uitest_prefix) { ut_capture(); ut_game(); ut_game_frames += frames; }
     if (apptest_prefix) apptest_step(frames);
     video_present();
+    if (cfg.vsync) { video_sync(); refresh_measure(); }
     if (!frames && !cfg.vsync) Sleep(1);
   }
   if (th) plat_join(th);

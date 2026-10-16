@@ -45,10 +45,18 @@ Grab the file for your system from the [latest release](https://github.com/carlo
 
 | System | File | |
 |---|---|---|
-| Windows (x64) | `littleplanet.exe` | Run it to install. |
+| Windows (x64) | `littleplanet.exe` | Run it to install. Or `littleplanet-windows-portable.zip`: unzip and run `Little Planet.exe`. |
 | macOS 11+ (Apple Silicon / Intel) | `littleplanet-macos.dmg` | Open it and run Little Planet. Not notarized: the first time, right-click → Open (macOS 15: System Settings → Privacy & Security → Open Anyway). |
 | Linux x86_64 | `littleplanet-linux.AppImage` | `chmod +x` it and run it. |
 | Linux ARM64 | `littleplanet-linux-aarch64.AppImage` | Same. |
+
+> [!NOTE]
+> **Antivirus warnings.** Some engines flag the Windows installer as a generic "trojan": it's a new,
+> unsigned program that unpacks a game, which is what their heuristics look for. Nothing in it is hidden:
+> every release file is built by [GitHub Actions](.github/workflows/build.yml) from this repository's source,
+> and you can check that a download is exactly that build with
+> `gh attestation verify littleplanet.exe --repo carlosrmz009/littleplanet`, or against `SHA256SUMS.txt`
+> in the release. The portable zip is there too if you'd rather scan the files one by one.
 
 The installer adds shortcuts, then asks for your disc image once and copies it (the .cue and everything it
 points to, or the .chd/.iso/.ccd) into the data folder:

@@ -2,3 +2,6 @@
 100 RCDATA "build/lp.exe"
 101 RCDATA "build/gen/libs.bin"
 102 RCDATA "build/uninst.exe"
+#define VER_DESC "Little Planet installer"
+#define VER_NAME "littleplanet.exe"
+#include "res/winver.rc"

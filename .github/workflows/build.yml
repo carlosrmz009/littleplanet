@@ -80,10 +80,22 @@ jobs:
           build\lp.exe --movie-check > build\movie.txt
           type build\movie.txt
           findstr /c:"ffmpeg ok" build\movie.txt || exit /b 1
+      - name: portable zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/portable/licenses | Out-Null
+          Copy-Item build/lp.exe "build/portable/Little Planet.exe"
+          Copy-Item build/ffmpeg/bin/*.dll build/portable/
+          Copy-Item build/intro.mkv build/portable/
+          Copy-Item build/ffmpeg/licenses/*.txt build/portable/licenses/
+          Copy-Item LICENSE build/portable/licenses/LittlePlanet-LICENSE.txt
+          Compress-Archive -Path build/portable/* -DestinationPath build/littleplanet-windows-portable.zip -CompressionLevel Optimal
       - uses: actions/upload-artifact@v4
         with:
           name: littleplanet-windows
-          path: build/littleplanet.exe
+          path: |
+            build/littleplanet.exe
+            build/littleplanet-windows-portable.zip
 
   macos:
     runs-on: macos-14
@@ -370,19 +382,29 @@ jobs:
     needs: [windows, macos, linux]
     if: always() && github.ref == 'refs/heads/main' && needs.windows.result == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      - name: checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      # anyone can check a download was built here, from this commit: gh attestation verify FILE --repo OWNER/REPO
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'dist/*'
       - name: release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view 1.0 >/dev/null 2>&1 || gh release create 1.0 --title "1.0" --notes "Run littleplanet.exe to install. You need your own Sonic CD (Mega-CD) disc image: cue/bin, chd, iso or ccd."
-          gh release upload 1.0 dist/littleplanet.exe --clobber
-          notes="Windows: run littleplanet.exe to install."
+          gh release upload 1.0 dist/littleplanet.exe dist/littleplanet-windows-portable.zip dist/SHA256SUMS.txt --clobber
+          notes="Windows: run littleplanet.exe to install, or unzip littleplanet-windows-portable.zip and run Little Planet.exe."
           if [ -f dist/littleplanet-macos.dmg ]; then
             gh release upload 1.0 dist/littleplanet-macos.dmg --clobber
             notes="$notes Mac: open littleplanet-macos.dmg and run Little Planet to install. It isn't notarized, so the first time right-click it and pick Open (macOS 15: System Settings > Privacy & Security > Open Anyway)."
@@ -395,6 +417,8 @@ jobs:
             gh release upload 1.0 dist/littleplanet-linux-aarch64.AppImage --clobber
             notes="$notes ARM Linux: use littleplanet-linux-aarch64.AppImage."
           fi
-          gh release edit 1.0 --notes "$notes You need your own Sonic CD (Mega-CD) disc image: cue/bin, chd, iso or ccd."
+          notes="$notes You need your own Sonic CD (Mega-CD) disc image: cue/bin, chd, iso or ccd."
+          notes="$notes"$'\n\n'"Every file here is built by GitHub Actions from this repository's source (commit ${GITHUB_SHA}). Check a download with: gh attestation verify FILE --repo ${GITHUB_REPOSITORY} (or compare it with SHA256SUMS.txt). Some antivirus engines flag new, unsigned games by heuristics; the source is all here."
+          gh release edit 1.0 --notes "$notes"
           git tag -f 1.0
           git push -f origin refs/tags/1.0

@@ -140,11 +140,10 @@ static const char *uninstall(void) {
   special(CSIDL_DESKTOPDIRECTORY, APP L".lnk", lnk); DeleteFileW(lnk);
   RegDeleteTreeW(HKEY_CURRENT_USER, UNKEY); RegDeleteTreeW(HKEY_CURRENT_USER, APKEY);
   SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
-  wchar_t cmd[3 * MAX_PATH], sys[MAX_PATH];
-  GetSystemDirectoryW(sys, MAX_PATH);
-  swprintf(cmd, 3 * MAX_PATH, L"\"%s\\cmd.exe\" /c ping 127.0.0.1 -n 3 >nul & del /f /q \"%s\\uninstall.exe\" & rmdir \"%s\"", sys, dir, dir);
-  STARTUPINFOW si = { sizeof si }; PROCESS_INFORMATION pi;
-  if (CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, sys, &si, &pi)) { CloseHandle(pi.hThread); CloseHandle(pi.hProcess); }
+  // this runs from a copy in %TEMP% (see wWinMain), so the folder's own uninstaller can go too
+  wchar_t un[MAX_PATH]; join(un, dir, L"uninstall.exe");
+  DeleteFileW(un);
+  RemoveDirectoryW(dir);
   return NULL;
 }
 
@@ -234,9 +233,28 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show) {
   SetProcessDPIAware();
   CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
   if (wcsstr(cmdline, L"--uninstall")) {
-    GetModuleFileNameW(NULL, dir, MAX_PATH);
-    *wcsrchr(dir, L'\\') = 0;
-    page = 10;
+    // An installed program can't delete its own file while it runs, so the uninstaller in the folder
+    // starts a copy of itself in %TEMP% (as most installers' uninstallers do), which removes the folder.
+    int argc; wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (argc >= 3) {
+      wcsncpy(dir, argv[2], MAX_PATH - 1);   // the copy: told which folder
+      page = 10;
+    } else {
+      wchar_t self[MAX_PATH], tmp[MAX_PATH], copy[MAX_PATH], cmd[3 * MAX_PATH];
+      GetModuleFileNameW(NULL, self, MAX_PATH);
+      wcscpy(dir, self); *wcsrchr(dir, L'\\') = 0;
+      GetTempPathW(MAX_PATH, tmp);
+      swprintf(copy, MAX_PATH, L"%sLittle Planet uninstall.exe", tmp);
+      STARTUPINFOW si = { sizeof si }; PROCESS_INFORMATION pi;
+      swprintf(cmd, 3 * MAX_PATH, L"\"%s\" --uninstall \"%s\"", copy, dir);
+      if (CopyFileW(self, copy, FALSE) && CreateProcessW(copy, cmd, NULL, NULL, FALSE, 0, NULL, tmp, &si, &pi)) {
+        CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
+        LocalFree(argv);
+        return 0;
+      }
+      page = 10;   // couldn't: uninstall from here (the uninstaller and the folder stay)
+    }
+    LocalFree(argv);
   } else {
     DWORD n = sizeof dir;
     if (RegGetValueW(HKEY_CURRENT_USER, UNKEY, L"InstallLocation", RRF_RT_REG_SZ, NULL, dir, &n) != ERROR_SUCCESS) {

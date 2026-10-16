@@ -1,2 +1,5 @@
 // the uninstaller: the installer without its payload
 1 ICON "res/littleplanet.ico"
+#define VER_DESC "Little Planet uninstaller"
+#define VER_NAME "uninstall.exe"
+#include "res/winver.rc"

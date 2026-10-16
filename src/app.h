@@ -56,6 +56,7 @@ void video_upload_game(const u32 *pix, int w, int h);
 void video_draw_game(const Settings *s, Rect r, float u0, float v0, float u1, float v1);
 void video_draw_rgba(const u32 *pix, int w, int h, Rect r, bool blend);
 void video_present(void);
+void video_sync(void);   // wait for the GPU, so a VSync'd present returns at the display's refresh
 bool video_can_draw_movie(void);
 void video_draw_movie(const MovieFrame *f, Rect r, float fade);
 int video_width(void), video_height(void);
