@@ -31,6 +31,9 @@ extern int vdp_exl, vdp_exr;    // widescreen: pixels drawn past the left and ri
 // (its colour 0-15, or -1 for the plane's own)
 extern void (*vdp_vram_dma)(u32 vram_addr, u32 src, u32 words);
 extern int (*vdp_plane_ext)(int line, int x, int hscroll, int y);
+// and for either plane: where past the sides to take its pixels from (a screen x), or VDP_CLEAR for none
+#define VDP_CLEAR (-100000)
+extern int (*vdp_plane_remap)(bool plane_a, int x);
 
 void vdp_reset(void);
 u16 vdp_read16(u32 a);

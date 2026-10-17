@@ -171,9 +171,45 @@ static void ss_frame(void) {
   vdp_exl = vdp_exr = WIDE_EXTRA_H32 / 2;
 }
 
+// Menus. The stage select, the sound test and the best times are text over a background that repeats every
+// 7 cells (plane B): past the sides the background carries on at the same phase and the text plane is
+// empty. The D.A. Garden's sky already fills its plane; its band of clouds (plane B rows 17-21, repeating
+// every 11 cells) is carried on into the columns the wider picture shows. Time Attack (pages side by side),
+// RAM Data (panels to the edges) and Visual Mode (a picture) stay 4:3.
+static int menu_period;   // in pixels
+static int menu_remap(bool plane_a, int x) {
+  if (plane_a) return VDP_CLEAR;
+  int w = vdp.width, p = menu_period;
+  if (x < 0) return x + (-x + p - 1) / p * p;
+  return x - (x - w + p) / p * p;
+}
+
+static void planet_frame(void) {   // the D.A. Garden (H32, plane B 64 cells wide)
+  if ((vdp.reg[16] & 3) != 1) return;
+  u32 nt = (vdp.reg[4] & 7) << 13;
+  for (int row = 0; row < 22; row++) {
+    int p = row >= 17 && row <= 20 ? 11 : 32;   // the clouds; the stars and the cloud bottom: the whole row
+    for (int c = 32; c < 64; c++) {
+      // columns 32-45 carry the row on to the right of column 31, 50-63 lead into column 0 from the left
+      int src = c < 48 ? c - (c - 31 + p - 1) / p * p : c - 64 + (64 - c + p - 1) / p * p;
+      u32 s = nt + (row * 64 + src) * 2, d = nt + (row * 64 + c) * 2;
+      vdp.vram[d] = vdp.vram[s]; vdp.vram[d + 1] = vdp.vram[s + 1];
+    }
+  }
+  vdp_exl = vdp_exr = WIDE_EXTRA_H32 / 2;
+}
+
 void wide_frame(void) {
   vdp_exl = vdp_exr = 0;
+  vdp_plane_remap = NULL;
   track_program();
+  if (enabled && (program_is("STSEL_.MMD") || program_is("SOSEL_.MMD") || program_is("DUMMY4.MMD"))) {
+    menu_period = 56;
+    vdp_plane_remap = menu_remap;
+    vdp_exl = vdp_exr = (vdp.width == 320 ? WIDE_EXTRA : WIDE_EXTRA_H32) / 2;
+    return;
+  }
+  if (enabled && vdp.width == 256 && program_is("PLANET_M.MMD")) { planet_frame(); return; }
   if (enabled && program_is("SPMM__.MMD")) {
     if (vdp.width == 256) { ss_frame(); return; }
   } else if (ss_on) { ss_on = false; asic_side = 0; vdp_vram_dma = NULL; vdp_plane_ext = NULL; }

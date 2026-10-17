@@ -234,6 +234,7 @@ static u8 lb_a[VDP_MAX_W], lb_b[VDP_MAX_W], lb_s[VDP_MAX_W];   // from vdp_exl p
 int vdp_exl, vdp_exr;
 void (*vdp_vram_dma)(u32 vram_addr, u32 src, u32 words);
 int (*vdp_plane_ext)(int line, int x, int hscroll, int y);
+int (*vdp_plane_remap)(bool plane_a, int x);
 
 static inline u8 tile_px(u16 entry, int row, int col) {
   u16 tile = entry & 0x7ff;
@@ -282,7 +283,12 @@ static void render_plane(u8 *out, int line, bool plane_a, int win_from, int win_
         continue;
       }
     }
-    int xp = (x - hscroll) & (px_w - 1);
+    int xs = x;   // where the pixel is taken from
+    if (vdp_plane_remap && (x < 0 || x >= w)) {
+      xs = vdp_plane_remap(plane_a, x);
+      if (xs == VDP_CLEAR) { out[x + vdp_exl] = 0; continue; }
+    }
+    int xp = (xs - hscroll) & (px_w - 1);
     u32 ea = (nt + ((y >> 3) * cells_h + (xp >> 3)) * 2) & 0xffff;
     if (ea != last_ea) { entry = vdp.vram[ea] << 8 | vdp.vram[ea | 1]; last_ea = ea; }
     out[x + vdp_exl] = tile_px(entry, y & 7, xp & 7);

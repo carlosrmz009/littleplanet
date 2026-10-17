@@ -109,7 +109,7 @@ title and the game's own menus Start stays the game's), and Esc, Home or Select+
 |---|---|
 | Filter | Sharp, Smooth, Scale4x, or CRT (grille/shadow/slot mask, scanlines, glow, curvature) |
 | Aspect | True16:9 (see above), 4:3 (as on a TV), or 16:9 blur-fill (4:3 with the picture blurred into the sides) |
-| 4:3 screens | In True16:9, what fills the sides of the screens that stay 4:3 (menus, special stages, cutscenes): Blur-fill (default) or Black bars |
+| 4:3 screens | In True16:9, what fills the sides of the screens that stay 4:3 (Time Attack, RAM Data, Visual Mode, the movies): Blur-fill (default) or Black bars |
 | Sound | Clean, or Accurate: adds the Model 1 Mega Drive's low-pass on FM and PSG (CD audio is never filtered) |
 | Intro | Remastered (LuanUP's 4K remaster, see above) or Original (the game's FMV) |
 | Controller | 3 button (default, what Sonic CD was made for) or 6 button (the real 6-button protocol) |
