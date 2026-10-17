@@ -344,6 +344,7 @@ void sub_w16(u32 a, u16 v) {
 // ---------------------------------------------------------------- scheduler
 void mcd_init(void) {
   memset(&mcd, 0, sizeof mcd);
+  wide_disc();
   m68k_init_tables();
   memset(&mcpu, 0, sizeof mcpu);
   memset(&scpu, 0, sizeof scpu);

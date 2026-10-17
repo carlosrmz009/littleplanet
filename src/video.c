@@ -210,7 +210,8 @@ void video_draw_game(const Settings *s, Rect r, float u0, float v0, float u1, fl
   bool full_crop = u0 == 0 && v0 == 0 && u1 == 1 && v1 == 1;
   int k = game_h >= 448 ? game_h / 224 : 1;       // Scale4x pictures are 4x
   int pw = game_w / k;                              // in VDP pixels: 256 (H32), 320 (H40) or wider (widescreen)
-  double px = pw == 256 ? 7.0 / 6 : 14.0 / 15;      // a pixel's width / height, so that 256 or 320 make 4:3
+  bool h32 = pw == 256 || pw == 256 + WIDE_EXTRA_H32;
+  double px = h32 ? 7.0 / 6 : 14.0 / 15;            // a pixel's width / height, so that 256 or 320 make 4:3
   bool wide = s->screen == ASPECT_WIDE;
   double par = wide ? pw * px / 224 : 4.0 / 3;
   // widescreen: sized for the 16:9 picture, so the 4:3 screens (menus, special stages) come out as tall
@@ -223,7 +224,7 @@ void video_draw_game(const Settings *s, Rect r, float u0, float v0, float u1, fl
   int x = r.x + (r.w - w) / 2, y = r.y + (r.h - h) / 2;
   glBindTexture(GL_TEXTURE_2D, tex_game);
   glColor4f(1, 1, 1, 1);
-  bool fill = s->screen == ASPECT_16_9_AMBIENT || (wide && s->wide_fill && pw <= 320);   // True16:9: the 4:3 screens
+  bool fill = s->screen == ASPECT_16_9_AMBIENT || (wide && s->wide_fill && (pw == 256 || pw == 320));   // True16:9: the 4:3 screens
   if (fill && full_crop && have_shaders && prog_ambient && w < r.w) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

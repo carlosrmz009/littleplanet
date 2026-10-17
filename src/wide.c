@@ -15,6 +15,8 @@
 #include "wide.h"
 #include "mcd.h"
 #include "vdp.h"
+#include "cdc.h"
+#include "disc.h"
 
 #define OBJ_HUD 0x1c      // object types (byte 0 of an object, the same in every stage): score/time/rings, lives
 #define OBJ_HUD2 0x19     // (and the piece under the lives)
@@ -49,9 +51,29 @@ static void apply(int f, bool on) {
   }
 }
 
+// which program the drive last loaded (the title, a menu...): the screens other than the stages are told
+// apart by that
+static IsoFile progs[160]; static int nprogs = -1, prog = -1;
+static void track_program(void) {
+  if (nprogs < 0) {
+    static IsoFile all[256];
+    int n = iso_list(all, 256);
+    nprogs = 0;
+    for (int i = 0; i < n && nprogs < 160; i++) {
+      size_t l = strlen(all[i].name);
+      if (l > 4 && !strcmp(all[i].name + l - 4, ".MMD")) progs[nprogs++] = all[i];
+    }
+  }
+  if (drive.state != DRV_READ) return;
+  for (int i = 0; i < nprogs; i++)
+    if (drive.lba >= progs[i].lba && drive.lba < progs[i].lba + (progs[i].size + 2047) / 2048) { prog = i; return; }
+}
+static bool program_is(const char *name) { return prog >= 0 && !strcmp(progs[prog].name, name); }
+
 void wide_enable(bool on) { enabled = on; }
 bool wide_stage(void) { return cur >= 0; }
-void wide_reset(void) { cur = -1; }
+void wide_reset(void) { cur = -1; prog = -1; }
+void wide_disc(void) { nprogs = -1; prog = -1; cur = -1; }
 
 void wide_check(void) {
   if (mcd.mode1m || !mcd.ret) return;    // the sub CPU has Word RAM: no stage runs from it now
@@ -71,18 +93,35 @@ void wide_check(void) {
 static void edges(int cam, int *l, int *r) {
   int lb = ram16(0xf728), rb = ram16(0xf72a);   // the camera's bounds
   int v = cam - WIDE_EXTRA / 2;                  // the picture's left edge in the level
-  if (rb - lb >= WIDE_EXTRA) {                   // (an arena narrower than that: centred)
-    if (v > rb - WIDE_EXTRA) v = rb - WIDE_EXTRA;
-    if (v < lb) v = lb;
-  }
+  if (v > rb - WIDE_EXTRA) v = rb - WIDE_EXTRA;  // never past the right bound: the act's end (Sonic runs
+  if (v < lb && rb - lb >= WIDE_EXTRA) v = lb;   // off it) and arenas show the way back instead
   *l = cam - v;
   if (*l < 0) *l = 0;
   if (*l > WIDE_EXTRA) *l = WIDE_EXTRA;
   *r = WIDE_EXTRA - *l;
 }
 
+// The title screen (H32, 256 wide): its clouds and water already fill the 512-pixel plane B; only the
+// horizon (rows 12-19: hills, the grass line) stops at 256. The hills at its right end (columns 26-31)
+// carry on into the columns the wider picture shows on both sides (32-37, 58-63).
+static void title_frame(void) {
+  if ((vdp.reg[16] & 3) != 1) return;   // planes 64 cells wide
+  u32 nt = (vdp.reg[4] & 7) << 13;
+  for (int row = 12; row < 20; row++)
+    for (int k = 0; k < 6; k++) {
+      u32 src = nt + (row * 64 + 26 + k) * 2;
+      for (int dst_col = 32 + k; dst_col < 64; dst_col += 26) {   // 32-37, 58-63
+        u32 dst = nt + (row * 64 + dst_col) * 2;
+        vdp.vram[dst] = vdp.vram[src]; vdp.vram[dst + 1] = vdp.vram[src + 1];
+      }
+    }
+  vdp_exl = vdp_exr = WIDE_EXTRA_H32 / 2;
+}
+
 void wide_frame(void) {
   vdp_exl = vdp_exr = 0;
+  track_program();
+  if (enabled && vdp.width == 256 && program_is("TITLEM.MMD")) { title_frame(); return; }
   if (!patched || !drawn || vdp.width != 320) return;
   edges(ram16(0xff1926), &vdp_exl, &vdp_exr);   // the camera the VBlank before this frame drew with
 }

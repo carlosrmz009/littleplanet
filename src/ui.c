@@ -61,7 +61,7 @@ static void build_items(bool in_game) {
   ADD("Glow", IT_SLIDER, &cfg.crt_glow, 0, 100, 10, NULL, "Bloom around bright stuff.", 0, 0);
   ADD("Curvature", IT_CHOICE, &cfg.crt_curvature, 0, 1, 1, onoff, "Curved glass, dark corners.", 0, 0);
   ADD("Aspect", IT_CHOICE, &cfg.screen, 0, ASPECT_COUNT - 1, 1, aspects, "True16:9 shows more of every stage, as in the 2011 version. 4:3 is how it looked on a TV; 16:9 blur-fill blurs the picture into the sides.", 1, 0);
-  ADD("4:3 screens", IT_CHOICE, &cfg.wide_fill, 0, 1, 1, fills, "In True16:9, what fills the sides of the screens that stay 4:3: the title, menus, special stages.", 0, 0);
+  ADD("4:3 screens", IT_CHOICE, &cfg.wide_fill, 0, 1, 1, fills, "In True16:9, what fills the sides of the screens that stay 4:3: menus, special stages, cutscenes.", 0, 0);
   ADD("Integer scale", IT_CHOICE, &cfg.integer_scale, 0, 1, 1, onoff, "Even pixels. Might leave borders.", 0, 0);
   ADD("Sound", IT_CHOICE, &cfg.sound, 0, 1, 1, audios, "Accurate adds the Model 1's filter on FM and PSG. CD music is never filtered. Enter plays a sample.", -2, A_SAMPLE);
   ADD("Volume", IT_SLIDER, &cfg.volume, 0, 100, 10, NULL, "Volume.", -2, 0);
