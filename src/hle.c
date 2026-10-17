@@ -3,6 +3,7 @@
 #include "hle.h"
 #include "mcd.h"
 #include "wide.h"
+#include "zones.h"
 #include "cdc.h"
 #include "disc.h"
 #include "vdp.h"
@@ -135,6 +136,7 @@ int hle_main_trap(M68k *c) {
   u16 id = c->ir & 0xfff;
   c->cyc += 4;
   if ((id & 0xf00) == 0x800) return wide_trap(c, id & 0xff);   // widescreen patches in the stage engine
+  if ((id & 0xf00) == 0x900) return zones_trap(c, id & 0xff);   // a save after every zone (zones.c)
   switch (id) {
   case T_VDPREGS: {
     u32 a = c->r[9];
@@ -185,6 +187,13 @@ static int bram_find(const char *name) {
   return -1;
 }
 bool bram_dirty(void) { return bram_changed; }
+u8 *bram_file(const char *name, int *bytes) {   // a file's data, to change in place (then bram_touch)
+  int i = bram_find(name);
+  if (i < 0) return NULL;
+  *bytes = bfiles[i].blocks * (bfiles[i].mode ? 32 : 64);
+  return bfiles[i].data;
+}
+void bram_touch(void) { bram_changed = true; }
 bool bram_save(const char *path) {
   FILE *f = u8fopen(path, "wb");
   if (!f) return false;

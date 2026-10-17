@@ -477,6 +477,8 @@ int app_run(const char *disc) {
     }
     b = input_key(VK_F12); if (b && !k_shot) { int w, h; game_picture(pic, &w, &h); screenshot(pic, w, h); } k_shot = b;
     fps_frames += frames;
+    static int since_flush;   // the game saved: on disk within a second, not only when the menu opens or the app quits
+    if ((since_flush += frames) >= 60 && !uitest_prefix) { since_flush = 0; bram_flush(); }
     now = plat_time();
     double dt = now - fps_t;
     if (dt >= 0.5) { fps = fps_frames / dt; fps_frames = 0; fps_t = now; }

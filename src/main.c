@@ -110,7 +110,7 @@ int apptest_shots[256], apptest_nshots, apptest_frames;
 
 int main(int argc, char **argv) {
   bool rcstats = false;
-  const char *disc = NULL, *shot_prefix = "shot", *dump = NULL, *wav_path = NULL, *state_in = NULL, *state_out = NULL, *cov_path = NULL;
+  const char *disc = NULL, *shot_prefix = "shot", *dump = NULL, *wav_path = NULL, *state_in = NULL, *state_out = NULL, *cov_path = NULL, *bram_path = NULL;
   FILE *hashlog = NULL;
   int frames = -1, shots[256], nshots = 0;
   for (int i = 1; i < argc; i++) {
@@ -131,6 +131,7 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
     else if (!strcmp(argv[i], "--hashlog") && i + 1 < argc) hashlog = fopen(argv[++i], "w");
     else if (!strcmp(argv[i], "--state") && i + 1 < argc) state_in = argv[++i];
+    else if (!strcmp(argv[i], "--bram") && i + 1 < argc) bram_path = argv[++i];   // backup RAM: loaded, and saved after
     else if (!strcmp(argv[i], "--savestate") && i + 1 < argc) state_out = argv[++i];
     else if (!strcmp(argv[i], "--uitest") && i + 1 < argc) uitest_prefix = argv[++i];
     else if (!strcmp(argv[i], "--apptest") && i + 1 < argc) apptest_prefix = argv[++i];
@@ -161,6 +162,7 @@ int main(int argc, char **argv) {
   char err[512];
   if (!disc || !machine_start(disc, err, sizeof err)) { fprintf(stderr, "%s\n", disc ? err : "no disc image given"); return 1; }
   if (cov_path) cov_enable();
+  if (bram_path) bram_load(bram_path);
   if (state_in && !app_load_state(state_in)) { fprintf(stderr, "can't load state %s\n", state_in); return 1; }
   FILE *wav = wav_path ? u8fopen(wav_path, "wb") : NULL;
   u32 wav_bytes = 0;
@@ -193,10 +195,12 @@ int main(int argc, char **argv) {
     fseek(wav, 0, SEEK_SET); fwrite(h, 1, 44, wav); fclose(wav);
   }
   if (state_out) app_save_state(state_out);
+  if (bram_path && bram_dirty()) bram_save(bram_path);
   if (cov_path) cov_save(cov_path);
   if (dump) {
     struct { const char *n; void *p; size_t s; } d[] = {{"work", mcd.work_ram, sizeof mcd.work_ram}, {"prg", mcd.prg_ram, sizeof mcd.prg_ram},
-      {"word", mcd.word_ram, sizeof mcd.word_ram}, {"vram", vdp.vram, sizeof vdp.vram}, {"cram", vdp.cram, sizeof vdp.cram}};
+      {"word", mcd.word_ram, sizeof mcd.word_ram}, {"vram", vdp.vram, sizeof vdp.vram}, {"cram", vdp.cram, sizeof vdp.cram},
+      {"vsram", vdp.vsram, sizeof vdp.vsram}, {"vreg", vdp.reg, sizeof vdp.reg}};
     for (unsigned k = 0; k < sizeof d / sizeof d[0]; k++) {
       char p[512]; snprintf(p, sizeof p, "%s_%s.bin", dump, d[k].n);
       FILE *f = u8fopen(p, "wb"); if (f) { fwrite(d[k].p, 1, d[k].s, f); fclose(f); }

@@ -9,6 +9,7 @@
 #include "asic.h"
 #include "state.h"
 #include "wide.h"
+#include "zones.h"
 
 Mcd mcd;
 M68k mcpu, scpu;
@@ -430,6 +431,7 @@ void mcd_run_frame(void) {
   vdp_frame_start();
   wide_check();
   wide_frame();
+  zones_frame();
   for (int line = 0; line < LINES_PER_FRAME; line++) {
     mcd.line = line;
     u64 line_start = (mcd.frame * LINES_PER_FRAME + line) * (u64)MCLK_PER_LINE;

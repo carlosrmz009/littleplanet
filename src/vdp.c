@@ -233,8 +233,8 @@ void vdp_frame_start(void) {
 static u8 lb_a[VDP_MAX_W], lb_b[VDP_MAX_W], lb_s[VDP_MAX_W];   // from vdp_exl pixels left of the screen
 int vdp_exl, vdp_exr;
 void (*vdp_vram_dma)(u32 vram_addr, u32 src, u32 words);
-int (*vdp_plane_ext)(int line, int x, int hscroll, int y);
-int (*vdp_plane_remap)(bool plane_a, int x);
+int (*vdp_plane_ext)(bool plane_a, int line, int x, int hscroll, int y);
+int (*vdp_plane_remap)(bool plane_a, int x, int line, int *dy);
 
 static inline u8 tile_px(u16 entry, int row, int col) {
   u16 tile = entry & 0x7ff;
@@ -271,8 +271,8 @@ static void render_plane(u8 *out, int line, bool plane_a, int win_from, int win_
     int col = x < 0 ? 0 : x >= w ? (w >> 4) - 1 : x >> 4;   // (past the sides: the nearest column's)
     int vs = vdp.vsram[(col_vs ? col * 2 : 0) + (plane_a ? 0 : 1)];
     int y = (line + vs) & (px_h - 1);
-    if (plane_a && vdp_plane_ext && (x < 0 || x >= w)) {
-      int c = vdp_plane_ext(line, x, hscroll, y);
+    if (vdp_plane_ext && (x < 0 || x >= w)) {
+      int c = vdp_plane_ext(plane_a, line, x, hscroll, y);
       if (c >= 0) {   // in the palette and priority of the screen's edge column
         int xe = x < 0 ? 0 : w - 1, xpe = (xe - hscroll) & (px_w - 1);
         u32 ea = (nt + ((y >> 3) * cells_h + (xpe >> 3)) * 2) & 0xffff;
@@ -283,15 +283,17 @@ static void render_plane(u8 *out, int line, bool plane_a, int win_from, int win_
         continue;
       }
     }
-    int xs = x;   // where the pixel is taken from
+    int xs = x, ys = y;   // where the pixel is taken from
     if (vdp_plane_remap && (x < 0 || x >= w)) {
-      xs = vdp_plane_remap(plane_a, x);
+      int dy = 0;
+      xs = vdp_plane_remap(plane_a, x, line, &dy);
       if (xs == VDP_CLEAR) { out[x + vdp_exl] = 0; continue; }
+      ys = (y + dy) & (px_h - 1);
     }
     int xp = (xs - hscroll) & (px_w - 1);
-    u32 ea = (nt + ((y >> 3) * cells_h + (xp >> 3)) * 2) & 0xffff;
+    u32 ea = (nt + ((ys >> 3) * cells_h + (xp >> 3)) * 2) & 0xffff;
     if (ea != last_ea) { entry = vdp.vram[ea] << 8 | vdp.vram[ea | 1]; last_ea = ea; }
-    out[x + vdp_exl] = tile_px(entry, y & 7, xp & 7);
+    out[x + vdp_exl] = tile_px(entry, ys & 7, xp & 7);
   }
 }
 

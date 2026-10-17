@@ -31,6 +31,8 @@ CAM_COPY = [0x4cf8, 0x00ff, 0xf700]           # movem.l ($f700).w,d0-d7: the cam
 CAM_COPY_TO = [0x48f9, 0x00ff, 0x00ff, 0x1926]  # movem.l d0-d7,($ff1926).l
 RIGHT_BOUND = [0xb078, 0xf72a]                # cmp.w ($f72a).w,d0
 LEFT_BOUND = [0xb078, 0xf728]                 # cmp.w ($f728).w,d0
+FLAGS_COPY = [0x4cf8, 0x0003, 0xf754]          # movem.l ($f754).w,d0-d1: the scroll flags (bits 2, 3 of
+                                              # $f754: draw plane A's column past the left, the right)
 
 
 def first(w):
@@ -80,7 +82,7 @@ def generate(assembled, out_path):   # assembled: [(file name, segments from asm
                 continue
             ok = (kinds.count(OBJ_L) == 1 and kinds.count(OBJ_R) == 1 and kinds.count(ROW) == 1 and kinds.count(SCREEN) == 1 and kinds.count(FULL) == 2
                   and kinds.count(RIGHT) >= 2 and kinds.count(LEFT) >= 6
-                  and all(has(code, x) for x in (CAM_COPY, CAM_COPY_TO, RIGHT_BOUND, LEFT_BOUND)))
+                  and all(has(code, x) for x in (CAM_COPY, CAM_COPY_TO, RIGHT_BOUND, LEFT_BOUND, FLAGS_COPY)))
             if not ok:
                 sys.exit('wide_gen: %s has the engine but not all of it (%s)' % (name, sorted(kinds)))
             files.append((name, len(rows), len(found)))

@@ -26,6 +26,7 @@ static bool enabled;
 static int cur = -1;          // the stage file in Word RAM (wide_files index), -1 if none
 static bool patched;
 static bool drawn;            // the planes were drawn wide (the game's full draw ran since the patching)
+static void level_drawn(void);
 
 static u16 wr16(u32 o) { return mcd.word_ram[o] << 8 | mcd.word_ram[o + 1]; }
 static void ww16(u32 o, u16 v) { mcd.word_ram[o] = (u8)(v >> 8); mcd.word_ram[o + 1] = (u8)v; }
@@ -82,7 +83,8 @@ void wide_check(void) {
   if (st < 0) {
     cur = -1;
     for (int f = 0; f < wide_nfiles && cur < 0; f++) if ((st = state_of(f)) >= 0) cur = f;
-    drawn = st == 1;   // already patched: a state saved in widescreen
+    drawn = false;
+    if (st == 1) level_drawn();   // already patched: a state saved in widescreen
   }
   patched = false;
   if (cur < 0) return;
@@ -90,72 +92,77 @@ void wide_check(void) {
   patched = enabled;
 }
 
-// how far the picture reaches past the left and right of the game's screen, for camera x `cam`
-static void edges(int cam, int *l, int *r) {
-  int lb = ram16(0xf728), rb = ram16(0xf72a);   // the camera's bounds
+// How far the picture reaches past the left of the game's screen (the rest is past the right), for camera
+// x `cam`. Never past the right bound: the act's end (Sonic runs off it) and arenas show the way back
+// instead. Never past the left bound the level started with; a boss raises it as the camera goes in, and
+// the picture carries on smoothly past that (it's the level Sonic just came through).
+static int lb_base;   // the left bound when the level was drawn (or lower since)
+static int left_extra(int cam) {
+  int rb = ram16(0xf72a), lo = lb_base, hi = rb - WIDE_EXTRA;
   int v = cam - WIDE_EXTRA / 2;                  // the picture's left edge in the level
-  if (v > rb - WIDE_EXTRA) v = rb - WIDE_EXTRA;  // never past the right bound: the act's end (Sonic runs
-  if (v < lb && rb - lb >= WIDE_EXTRA) v = lb;   // off it) and arenas show the way back instead
-  *l = cam - v;
-  if (*l < 0) *l = 0;
-  if (*l > WIDE_EXTRA) *l = WIDE_EXTRA;
-  *r = WIDE_EXTRA - *l;
+  if (v > hi) v = hi;
+  if (v < lo && lo <= hi) v = lo;
+  int l = cam - v;
+  return l < 0 ? 0 : l > WIDE_EXTRA ? WIDE_EXTRA : l;
 }
 
-// The title screen (H32, 256 wide): its clouds and water already fill the 512-pixel plane B; only the
-// horizon (rows 12-19: hills, the grass line) stops at 256. The hills at its right end (columns 26-31)
-// carry on into the columns the wider picture shows on both sides (32-37, 58-63).
-static void title_frame(void) {
-  if ((vdp.reg[16] & 3) != 1) return;   // planes 64 cells wide
-  u32 nt = (vdp.reg[4] & 7) << 13;
-  for (int row = 12; row < 20; row++)
-    for (int k = 0; k < 6; k++) {
-      u32 src = nt + (row * 64 + 26 + k) * 2;
-      for (int dst_col = 32 + k; dst_col < 64; dst_col += 26) {   // 32-37, 58-63
-        u32 dst = nt + (row * 64 + dst_col) * 2;
-        vdp.vram[dst] = vdp.vram[src]; vdp.vram[dst + 1] = vdp.vram[src + 1];
-      }
-    }
-  vdp_exl = vdp_exr = WIDE_EXTRA_H32 / 2;
-}
+// The game draws a new column only as the camera crosses into it, one ahead of its own edge (the traps
+// put that edge past the extra pixels). If the split itself changes (the right bound moves, a level's
+// start), the picture moves against the camera with nothing drawn there: so it moves 12 pixels a frame at
+// most, and while it does the game is asked to draw the column ahead of each side every frame (bits 2 and
+// 3 of its plane A scroll flags), always ahead of what the picture shows next.
+#define SPLIT_STEP 12
+static int l_shown;           // the split shown
+static bool split_moving;     // it moved past what the game draws, or moves on next: draw the side columns
+static int cam_last;
 
-// The special stages (H32): the sky and the HUD carry on by themselves, but the floor is a 256x96 picture
-// the graphics ASIC draws every frame. The main CPU gets Word RAM with it, copies it to work RAM and from
-// there to one of two buffers in VRAM (tiles 1-384 and 385-768, on plane A rows 16-27; the floor lines'
-// scroll of 0 or 256 picks which is shown). Past its sides the plane shows unrelated tiles. So the ASIC
-// also works out the dots past both ends of each line (asic.c, same maths, kept out of Word RAM); they
-// are taken when Word RAM goes to the main CPU with that image, each VRAM buffer gets them with the
-// copy into it, and the floor lines are drawn on from them.
-#define SS_FLOOR_TOP 128            // first line of the floor (plane A row 16)
-#define SS_FLOOR_LINES 96
-#define SS_BUF_BYTES (32 * 12 * 32)  // one VRAM buffer: 32 columns of 12 cells
-static bool ss_on;
-static u8 ss_side[2][SS_FLOOR_LINES][2][ASIC_SIDE_MAX];
-static bool ss_have[2];
-static u8 ss_handed[SS_FLOOR_LINES][2][ASIC_SIDE_MAX];   // with the image the main CPU got last
+// Pictures the graphics ASIC draws, 256x96: the special stages' floor (plane A rows 16-27) and the title's
+// sky (plane B rows 0-11). The main CPU gets Word RAM with one, copies it to work RAM and from there to
+// one of two buffers in VRAM (tiles 1-384 and 385-768; the lines' scroll of 0 or 256 picks which is
+// shown). Past its sides the plane shows unrelated tiles. So the ASIC also works out the dots past both
+// ends of each line (asic.c, same maths, kept out of Word RAM); they are taken when Word RAM goes to the
+// main CPU with that image, each VRAM buffer gets them with the copy into it, and the picture's lines are
+// drawn on from them.
+#define PIC_LINES 96
+#define PIC_BUF_BYTES (32 * 12 * 32)  // one VRAM buffer: 32 columns of 12 cells
+static bool pic_on, pic_plane_a;
+static int pic_top;                   // its first line in the plane
+static u8 pic_side[2][PIC_LINES][2][ASIC_SIDE_MAX];
+static bool pic_have[2];
+static u8 pic_handed[PIC_LINES][2][ASIC_SIDE_MAX];   // with the image the main CPU got last
 
-void wide_wram_to_main(void) { if (ss_on) memcpy(ss_handed, asic_side_px, sizeof ss_handed); }
+void wide_wram_to_main(void) { if (pic_on) memcpy(pic_handed, asic_side_px, sizeof pic_handed); }
 
-static void ss_dma(u32 vram, u32 src, u32 words) {
+static void pic_dma(u32 vram, u32 src, u32 words) {
   (void)src; (void)words;
-  if (!ss_on || vram < 0x20 || vram >= 0x20 + 2 * SS_BUF_BYTES) return;
-  int b = (vram - 0x20) / SS_BUF_BYTES;
-  memcpy(ss_side[b], ss_handed, sizeof ss_side[b]);
-  ss_have[b] = true;
+  if (!pic_on || vram < 0x20 || vram >= 0x20 + 2 * PIC_BUF_BYTES) return;
+  int b = (vram - 0x20) / PIC_BUF_BYTES;
+  memcpy(pic_side[b], pic_handed, sizeof pic_side[b]);
+  pic_have[b] = true;
 }
 
-static int ss_ext(int line, int x, int hscroll, int y) {
+static int pic_ext(bool plane_a, int line, int x, int hscroll, int y) {
   (void)line;
-  if (!ss_on || y < SS_FLOOR_TOP || y >= SS_FLOOR_TOP + SS_FLOOR_LINES) return -1;
+  if (!pic_on || plane_a != pic_plane_a || y < pic_top || y >= pic_top + PIC_LINES) return -1;
   int b = (hscroll >> 8) & 1;
-  if (!ss_have[b]) return -1;
+  if (!pic_have[b]) return -1;
   int k = x < 0 ? -x - 1 : x - vdp.width;
   if (k >= ASIC_SIDE_MAX) return -1;
-  return ss_side[b][y - SS_FLOOR_TOP][x < 0 ? 0 : 1][k];
+  return pic_side[b][y - pic_top][x < 0 ? 0 : 1][k];
 }
 
+static void pic_start(bool plane_a, int top) {   // (every frame it's shown)
+  if (!pic_on || pic_plane_a != plane_a || pic_top != top) {
+    pic_on = true; pic_plane_a = plane_a; pic_top = top; pic_have[0] = pic_have[1] = false;
+  }
+  asic_side = WIDE_EXTRA_H32 / 2 + 6;
+  vdp_vram_dma = pic_dma; vdp_plane_ext = pic_ext;
+}
+static void pic_stop(void) { pic_on = false; asic_side = 0; vdp_vram_dma = NULL; vdp_plane_ext = NULL; }
+
+// The special stages (H32): the sky and the HUD carry on by themselves; the floor is an ASIC picture.
 static void ss_frame(void) {
-  if (!ss_on) { ss_on = true; ss_have[0] = ss_have[1] = false; }
+  pic_start(true, 128);   // plane A rows 16-27
   // the sea under the floor (plane B rows 16-27, a pattern repeating every 2 columns) is only filled in
   // for the 256 pixels: carry it on across the plane
   if ((vdp.reg[16] & 3) == 1) {
@@ -166,8 +173,56 @@ static void ss_frame(void) {
         vdp.vram[dst] = vdp.vram[src]; vdp.vram[dst + 1] = vdp.vram[src + 1];
       }
   }
-  asic_side = WIDE_EXTRA_H32 / 2 + 6;
-  vdp_vram_dma = ss_dma; vdp_plane_ext = ss_ext;
+  vdp_exl = vdp_exr = WIDE_EXTRA_H32 / 2;
+}
+
+// The title screen (H32, 256 wide), plane B. The sky (rows 0-11) is an ASIC picture; the water (from line
+// 160) scrolls and fills the plane by itself. The horizon between them is a still 256-pixel picture that
+// doesn't join up at its ends: repeated, the hills stop dead at the edge; mirrored, the mountain stands
+// there twice. So each of its lines past each side shows a strip of the picture itself (from that line or
+// one nearby, maybe flipped), picked so that it carries on from the edge and agrees with the lines around
+// it (tools/title_sides.py made these tables from the picture). If it isn't that picture: the plane's own.
+#define TITLE_HORIZON 96
+#define TITLE_WATER 160
+typedef struct { s8 dy; u8 flip, a; } TitleSide;
+#define TITLE_HORIZON_HASH 0x7ced845a
+static const TitleSide title_left[TITLE_WATER - TITLE_HORIZON] = {
+  {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106},
+  {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106},
+  {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106},
+  {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106},
+  {0,0,106}, {0,0,106}, {0,0,106}, {0,0,106}, {3,1,68}, {9,0,232}, {5,1,72}, {4,1,72},
+  {0,1,68}, {0,1,69}, {3,1,74}, {2,1,74}, {-1,0,232}, {0,1,74}, {0,1,74}, {0,1,74},
+  {0,1,74}, {0,1,74}, {1,1,78}, {1,1,78}, {1,1,78}, {1,1,78}, {2,1,78}, {1,1,78},
+  {1,1,78}, {1,0,214}, {1,0,214}, {1,0,214}, {1,0,214}, {1,0,214}, {1,0,214}, {0,0,214},
+};
+static const TitleSide title_right[TITLE_WATER - TITLE_HORIZON] = {
+  {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64},
+  {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64},
+  {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64},
+  {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64},
+  {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,64}, {0,0,67}, {0,0,71},
+  {0,0,71}, {0,0,72}, {0,0,73}, {0,0,76}, {0,0,77}, {0,0,78}, {0,0,78}, {0,0,160},
+  {0,0,160}, {0,0,160}, {0,1,204}, {0,1,204}, {0,1,204}, {0,1,204}, {-1,0,76}, {-1,0,76},
+  {0,0,78}, {-1,0,78}, {-1,0,78}, {-1,0,78}, {-1,0,78}, {-1,0,78}, {-1,0,78}, {-1,0,78},
+};
+static bool title_known;
+
+static int title_remap(bool plane_a, int x, int line, int *dy) {
+  int w = vdp.width;
+  if (plane_a || line < TITLE_HORIZON || line >= TITLE_WATER || !title_known) return x;
+  const TitleSide *t = (x < 0 ? title_left : title_right) + line - TITLE_HORIZON;
+  *dy = t->dy;
+  if (x >= w) x -= w;   // 0..41 past the right, -42..-1 past the left
+  return t->flip ? t->a - 1 - x : x + t->a;
+}
+
+static void title_frame(void) {
+  u32 nt = (vdp.reg[4] & 7) << 13, h = 2166136261u;
+  for (int i = 12 * 128; i < 20 * 128; i++) h = (h ^ vdp.vram[(nt + i) & 0xffff]) * 16777619u;   // rows 12-19
+  title_known = (vdp.reg[16] & 3) == 1 && h == TITLE_HORIZON_HASH;   // (64 cells wide)
+  pic_start(false, 0);
+  vdp_plane_remap = title_remap;
   vdp_exl = vdp_exr = WIDE_EXTRA_H32 / 2;
 }
 
@@ -177,7 +232,8 @@ static void ss_frame(void) {
 // every 11 cells) is carried on into the columns the wider picture shows. Time Attack (pages side by side),
 // RAM Data (panels to the edges) and Visual Mode (a picture) stay 4:3.
 static int menu_period;   // in pixels
-static int menu_remap(bool plane_a, int x) {
+static int menu_remap(bool plane_a, int x, int line, int *dy) {
+  (void)line; (void)dy;
   if (plane_a) return VDP_CLEAR;
   int w = vdp.width, p = menu_period;
   if (x < 0) return x + (-x + p - 1) / p * p;
@@ -199,10 +255,24 @@ static void planet_frame(void) {   // the D.A. Garden (H32, plane B 64 cells wid
   vdp_exl = vdp_exr = WIDE_EXTRA_H32 / 2;
 }
 
+// The time warp between two time periods (WARP__.MMD, in work RAM while the stage waits in Word RAM; H40):
+// Sonic over a 40-column field of noise at $e000, every line scrolled its own way. The noise is carried on
+// across the rest of the plane, the picture centred on the game's.
+static const u8 warp_code[16] = { 0x21, 0xfc, 0x00, 0xff, 0x21, 0x70, 0xfd, 0x08, 0x41, 0xf8, 0x80, 0x00, 0x3e, 0x3c, 0x1e, 0xff };
+#define WARP_NT 0xe000
+static bool warp_running(void) { return !memcmp(&mcd.work_ram[0x2000], warp_code, sizeof warp_code); }   // at $ff2000
+static void warp_frame(void) {
+  if ((vdp.reg[16] & 3) == 1)   // planes 64 cells wide, 32 high
+    for (int row = 0; row < 32; row++)
+      memcpy(&vdp.vram[WARP_NT + (row * 64 + 40) * 2], &vdp.vram[WARP_NT + row * 64 * 2], 24 * 2);
+  vdp_exl = vdp_exr = WIDE_EXTRA / 2;
+}
+
 void wide_frame(void) {
   vdp_exl = vdp_exr = 0;
   vdp_plane_remap = NULL;
   track_program();
+  if (enabled && vdp.width == 320 && warp_running()) { warp_frame(); return; }
   if (enabled && (program_is("STSEL_.MMD") || program_is("SOSEL_.MMD") || program_is("DUMMY4.MMD"))) {
     menu_period = 56;
     vdp_plane_remap = menu_remap;
@@ -210,23 +280,44 @@ void wide_frame(void) {
     return;
   }
   if (enabled && vdp.width == 256 && program_is("PLANET_M.MMD")) { planet_frame(); return; }
-  if (enabled && program_is("SPMM__.MMD")) {
+  bool ss = enabled && program_is("SPMM__.MMD"), title = enabled && program_is("TITLEM.MMD");
+  if (pic_on && !ss && !title) pic_stop();
+  if (ss) {
     if (vdp.width == 256) { ss_frame(); return; }
-  } else if (ss_on) { ss_on = false; asic_side = 0; vdp_vram_dma = NULL; vdp_plane_ext = NULL; }
-  if (enabled && vdp.width == 256 && program_is("TITLEM.MMD")) { title_frame(); return; }
+  }
+  if (title && vdp.width == 256) { title_frame(); return; }
   if (!patched || !drawn || vdp.width != 320) return;
-  edges(ram16(0xff1926), &vdp_exl, &vdp_exr);   // the camera the VBlank before this frame drew with
+  int lb = ram16(0xf728);
+  if (lb < lb_base) lb_base = lb;
+  int cam = ram16(0xff1926);   // the camera the VBlank before this frame drew with
+  int t = left_extra(cam), d = t - l_shown;
+  if (d > SPLIT_STEP) d = SPLIT_STEP;
+  if (d < -SPLIT_STEP) d = -SPLIT_STEP;
+  // the picture's edges move in the level by dv, the game's drawing (with the camera) by dc: more than
+  // that, or a move still to come, needs the side columns
+  int dc = cam - cam_last, dv = dc - d;
+  l_shown += d;
+  cam_last = cam;
+  split_moving = l_shown != t || dv < (dc < 0 ? dc : 0) || dv > (dc > 0 ? dc : 0);
+  vdp_exl = l_shown; vdp_exr = WIDE_EXTRA - l_shown;
+}
+
+static void level_drawn(void) {   // the level was drawn whole (it starts, or a state was loaded)
+  drawn = true;
+  lb_base = ram16(0xf728);
+  cam_last = ram16(0xf700);
+  l_shown = left_extra(cam_last);
+  split_moving = false;
 }
 
 static u16 rd16(u32 a) { return (u16)ram16(a); }
 
 int wide_trap(M68k *c, int id) {
-  int l, r;
-  edges(ram16(0xf700), &l, &r);
+  if (id == 7) level_drawn();                                                     // moveq #0,d5 (full draw)
+  int l = drawn ? l_shown : left_extra(ram16(0xf700)), r = WIDE_EXTRA - l;
   int xl = -16 - ((l + 15) & ~15), xr = 320 + ((r + 15) & ~15);   // whole 16-pixel blocks
   switch (id) {
-  case 7: drawn = true;                                                            // moveq #0,d5 (full draw)
-    // fall through
+  case 7:
   case 1: c->r[5] = (u32)xl; return 1;                                          // moveq #-16,d5
   case 2: c->r[5] = (c->r[5] & 0xffff0000) | (u16)xr; return 1;                  // move.w #$140,d5
   case 3: c->r[6] = (u32)((xr - xl) / 16); return 1;                             // moveq #$15,d6
@@ -242,6 +333,8 @@ int wide_trap(M68k *c, int id) {
     return 1;
   }
   case 6: {                                                                        // move.w $8(a0),d3
+    // (the sprites are placed after the camera moved, before the VBlank copies its scroll flags)
+    if (split_moving) mcd.work_ram[0xf754] |= 0x0c;   // plane A: draw the column past each side
     u8 obj = mcd.work_ram[c->r[8] & 0xffff];   // the object's type
     int shift = obj == OBJ_HUD || obj == OBJ_HUD2 ? -l : WIDE_EXTRA / 2 - l;
     c->r[3] = (c->r[3] & 0xffff0000) | (u16)(rd16(c->r[8] + 8) + shift);

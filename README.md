@@ -67,7 +67,12 @@ points to, or the .chd/.iso/.ccd) into the data folder:
 | macOS | `~/Library/Application Support/Little Planet` |
 | Linux | `~/.local/share/littleplanet` |
 
-Saves (the Mega-CD's backup RAM) go to `backup_ram.bin` there. Uninstalling keeps that folder.
+Saves (the Mega-CD's backup RAM) go to `backup_ram.bin` there, within a second of the game writing them.
+Uninstalling keeps that folder.
+
+The original saves only when a round starts, and CONTINUE goes back to that round's Zone 1. Here the game
+also saves after every zone: CONTINUE picks up at the next one (the good future so far, time stones and
+special stages included; score and lives start over, as they always do on CONTINUE).
 
 ### Fidelity
 
@@ -170,7 +175,8 @@ test disc (`tools/mktestdisc.py`). Every push to `main` refreshes the release.
 | `--wav FILE` | record audio (headless) |
 | `--hashlog FILE` | per-frame hash of main and PRG-RAM, to compare runs |
 | `--state FILE` / `--savestate FILE` | load a state before / save one after a headless run |
-| `--dump PREFIX` | write RAM and VRAM at the end |
+| `--dump PREFIX` | write RAM, VRAM and the VDP's registers at the end |
+| `--bram FILE` | backup RAM (the saves) for a headless run: loaded before, written after |
 | `--uitest PREFIX` | scripted walk through the launcher and game, saving the real OpenGL output |
 | `--apptest PREFIX` | the app straight into the game (after `--state`), window screenshots at the `--shot` frames, the sound in `PREFIX.wav`, quits after `--frames` |
 | `--movie-check` | say whether FFmpeg (for the remastered opening) can be loaded |
@@ -232,6 +238,7 @@ src/
   disc.c version.c   disc images, known releases
   movie.c intro.c    remastered opening: FFmpeg playback, synced to the CD drive
   wide.c             True16:9: the stage engine's patches, the picture's edges
+  zones.c            a save after every zone (patches the main program)
   recomp.c           runs the recompiled game code (generated from asm/ at build time)
   app.c ui.c video.c config.c discwiz.c update.c state.c
   ui_art.c vg.c gfx.c launcher art, its vector renderer (text via stb_truetype), installer widgets

@@ -13,3 +13,5 @@ void hle_sub_reset(void);
 bool bram_load(const char *path);
 bool bram_save(const char *path);
 bool bram_dirty(void);
+u8 *bram_file(const char *name, int *bytes);
+void bram_touch(void);
