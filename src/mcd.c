@@ -251,7 +251,7 @@ static void sub_mem_mode_write(u8 v) {
     if (m1) mcd.dmna = 0;
   }
   if (!mcd.mode1m) {
-    if (v & 1) { mcd.ret = 1; mcd.dmna = 0; wide_check(); }   // return Word RAM to main (maybe with a stage in it)
+    if (v & 1) { mcd.ret = 1; mcd.dmna = 0; wide_wram_to_main(); wide_check(); }   // return Word RAM to main (maybe with a stage in it)
   } else {
     // 1M: RET selects the bank arrangement; a write completes any pending swap request
     mcd.ret = v & 1;

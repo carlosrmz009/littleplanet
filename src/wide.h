@@ -19,4 +19,5 @@ void wide_disc(void);          // a disc was opened
 void wide_check(void);         // Word RAM came back to the main CPU, or a new frame: patch or unpatch the stage
 void wide_frame(void);         // a frame starts: how far the picture reaches past each side (vdp_exl, vdp_exr)
 int wide_trap(M68k *c, int id);   // line-A $a8xx in the patched code
+void wide_wram_to_main(void);  // Word RAM (2M) was just given to the main CPU
 bool wide_stage(void);         // a stage (or an attract demo) is running: its engine is in Word RAM

@@ -87,6 +87,7 @@ static void dma_68k(void) {
   u32 src = (R(21) << 1 | R(22) << 9 | (R(23) & 0x7f) << 17);
   bool wram = src >= 0x200000 && src < 0x240000;
   u32 words = len;
+  if (vdp_vram_dma && (vdp.code & 0xf) == 1) vdp_vram_dma(vdp.addr, src, len);
   while (len--) {
     u16 w;
     u32 a = (src & 0xfe0000) | (src & 0x1ffff);
@@ -231,6 +232,8 @@ void vdp_frame_start(void) {
 // line buffer entries: bits 0-5 color index, bit 6 priority, bit 7 opaque
 static u8 lb_a[VDP_MAX_W], lb_b[VDP_MAX_W], lb_s[VDP_MAX_W];   // from vdp_exl pixels left of the screen
 int vdp_exl, vdp_exr;
+void (*vdp_vram_dma)(u32 vram_addr, u32 src, u32 words);
+int (*vdp_plane_ext)(int line, int x, int hscroll, int y);
 
 static inline u8 tile_px(u16 entry, int row, int col) {
   u16 tile = entry & 0x7ff;
@@ -267,6 +270,18 @@ static void render_plane(u8 *out, int line, bool plane_a, int win_from, int win_
     int col = x < 0 ? 0 : x >= w ? (w >> 4) - 1 : x >> 4;   // (past the sides: the nearest column's)
     int vs = vdp.vsram[(col_vs ? col * 2 : 0) + (plane_a ? 0 : 1)];
     int y = (line + vs) & (px_h - 1);
+    if (plane_a && vdp_plane_ext && (x < 0 || x >= w)) {
+      int c = vdp_plane_ext(line, x, hscroll, y);
+      if (c >= 0) {   // in the palette and priority of the screen's edge column
+        int xe = x < 0 ? 0 : w - 1, xpe = (xe - hscroll) & (px_w - 1);
+        u32 ea = (nt + ((y >> 3) * cells_h + (xpe >> 3)) * 2) & 0xffff;
+        u16 e = vdp.vram[ea] << 8 | vdp.vram[ea | 1];
+        u8 pri = (e >> 9) & 0x40;
+        out[x + vdp_exl] = c ? (u8)(((e >> 9) & 0x30) | c | pri | 0x80) : pri;
+        last_ea = 0xffffffff;
+        continue;
+      }
+    }
     int xp = (x - hscroll) & (px_w - 1);
     u32 ea = (nt + ((y >> 3) * cells_h + (xp >> 3)) * 2) & 0xffff;
     if (ea != last_ea) { entry = vdp.vram[ea] << 8 | vdp.vram[ea | 1]; last_ea = ea; }

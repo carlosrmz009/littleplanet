@@ -39,31 +39,47 @@ static inline void nib_wr(u32 idx, u8 v) {
 }
 static inline u16 wr16(u32 a) { a &= 0x3fffe; return mcd.word_ram[a] << 8 | mcd.word_ram[a + 1]; }
 
+// the dot at (xpos, ypos) of the stamp map
+static u8 sample(u32 xpos, u32 ypos) {
+  bool repeat = reg[0] & 1, big = reg[0] & 2;
+  if (repeat) { xpos &= dot_mask; ypos &= dot_mask; }
+  else { xpos &= 0xffffff; ypos &= 0xffffff; }
+  if ((xpos | ypos) & ~dot_mask) return 0;
+  u16 sd = wr16(map_base + 2 * ((xpos >> stamp_shift) | ((ypos >> stamp_shift) << map_shift)));
+  u32 num = sd & 0x7ff;
+  if (!num) return 0;
+  int hrr = (sd >> 13) & 7;
+  u32 px = xpos >> 11, py = ypos >> 11;
+  int cmask = big ? 3 : 1;
+  int ccol = (px >> 3) & cmask, crow = (py >> 3) & cmask;
+  int cell = cell_lut[crow << 6 | ccol << 4 | (big ? 8 : 0) | hrr];
+  int pix = pixel_lut[(py & 7) << 6 | (px & 7) << 3 | hrr];
+  u32 base = big ? (num & ~3u) << 8 : num << 8;
+  return nib_rd(base + cell * 64 + pix);
+}
+
+// widescreen (wide.c): the dots just past both ends of every line, worked out the same way and kept
+// aside (not in Word RAM: the game's image stays exactly as it was)
+int asic_side;
+u8 asic_side_px[ASIC_SIDE_LINES][2][ASIC_SIDE_MAX];
+static u8 side_now[ASIC_SIDE_LINES][2][ASIC_SIDE_MAX];
+static int line_no;
+
 static void render_line(void) {
   u32 xpos = (u32)wr16(trace) << 8, ypos = (u32)wr16(trace + 2) << 8;
   s32 dx = (s16)wr16(trace + 4), dy = (s16)wr16(trace + 6);
   trace += 8;
-  bool repeat = reg[0] & 1, big = reg[0] & 2;
   int width = reg[5] & 0x1ff;
+  if (asic_side && line_no < ASIC_SIDE_LINES) {
+    for (int k = 1; k <= asic_side; k++) {
+      side_now[line_no][0][k - 1] = sample(xpos - (u32)(k * dx), ypos - (u32)(k * dy));
+      side_now[line_no][1][k - 1] = sample(xpos + (u32)((width - 1 + k) * dx), ypos + (u32)((width - 1 + k) * dy));
+    }
+  }
+  line_no++;
   u32 idx = buf_start;
   for (int i = 0; i < width; i++) {
-    if (repeat) { xpos &= dot_mask; ypos &= dot_mask; }
-    else { xpos &= 0xffffff; ypos &= 0xffffff; }
-    u8 out = 0;
-    if (!((xpos | ypos) & ~dot_mask)) {
-      u16 sd = wr16(map_base + 2 * ((xpos >> stamp_shift) | ((ypos >> stamp_shift) << map_shift)));
-      u32 num = sd & 0x7ff;
-      if (num) {
-        int hrr = (sd >> 13) & 7;
-        u32 px = xpos >> 11, py = ypos >> 11;
-        int cmask = big ? 3 : 1;
-        int ccol = (px >> 3) & cmask, crow = (py >> 3) & cmask;
-        int cell = cell_lut[crow << 6 | ccol << 4 | (big ? 8 : 0) | hrr];
-        int pix = pixel_lut[(py & 7) << 6 | (px & 7) << 3 | hrr];
-        u32 base = big ? (num & ~3u) << 8 : num << 8;
-        out = nib_rd(base + cell * 64 + pix);
-      }
-    }
+    u8 out = sample(xpos, ypos);
     u8 in = nib_rd(idx);
     switch (mcd.pm) {
     case 1: if (in) out = in; break;    // underwrite
@@ -93,6 +109,7 @@ static void start(void) {
   if (!cycles_per_line) cycles_per_line = 1;
   cycles_left = cycles_per_line;
   busy = true;
+  line_no = 0;
 }
 
 u16 asic_read(int r) {
@@ -122,6 +139,7 @@ void asic_run(u32 cycles) {
   while (busy && cycles_left <= 0) {
     if ((reg[6] & 0xff) == 0) {
       busy = false;
+      if (asic_side) memcpy(asic_side_px, side_now, sizeof side_now);
       if (mcd.int_mask & 2) mcd_sub_irq(1);
       break;
     }

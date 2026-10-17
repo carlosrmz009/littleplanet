@@ -17,6 +17,7 @@
 #include "vdp.h"
 #include "cdc.h"
 #include "disc.h"
+#include "asic.h"
 
 #define OBJ_HUD 0x1c      // object types (byte 0 of an object, the same in every stage): score/time/rings, lives
 #define OBJ_HUD2 0x19     // (and the piece under the lives)
@@ -118,9 +119,64 @@ static void title_frame(void) {
   vdp_exl = vdp_exr = WIDE_EXTRA_H32 / 2;
 }
 
+// The special stages (H32): the sky and the HUD carry on by themselves, but the floor is a 256x96 picture
+// the graphics ASIC draws every frame. The main CPU gets Word RAM with it, copies it to work RAM and from
+// there to one of two buffers in VRAM (tiles 1-384 and 385-768, on plane A rows 16-27; the floor lines'
+// scroll of 0 or 256 picks which is shown). Past its sides the plane shows unrelated tiles. So the ASIC
+// also works out the dots past both ends of each line (asic.c, same maths, kept out of Word RAM); they
+// are taken when Word RAM goes to the main CPU with that image, each VRAM buffer gets them with the
+// copy into it, and the floor lines are drawn on from them.
+#define SS_FLOOR_TOP 128            // first line of the floor (plane A row 16)
+#define SS_FLOOR_LINES 96
+#define SS_BUF_BYTES (32 * 12 * 32)  // one VRAM buffer: 32 columns of 12 cells
+static bool ss_on;
+static u8 ss_side[2][SS_FLOOR_LINES][2][ASIC_SIDE_MAX];
+static bool ss_have[2];
+static u8 ss_handed[SS_FLOOR_LINES][2][ASIC_SIDE_MAX];   // with the image the main CPU got last
+
+void wide_wram_to_main(void) { if (ss_on) memcpy(ss_handed, asic_side_px, sizeof ss_handed); }
+
+static void ss_dma(u32 vram, u32 src, u32 words) {
+  (void)src; (void)words;
+  if (!ss_on || vram < 0x20 || vram >= 0x20 + 2 * SS_BUF_BYTES) return;
+  int b = (vram - 0x20) / SS_BUF_BYTES;
+  memcpy(ss_side[b], ss_handed, sizeof ss_side[b]);
+  ss_have[b] = true;
+}
+
+static int ss_ext(int line, int x, int hscroll, int y) {
+  (void)line;
+  if (!ss_on || y < SS_FLOOR_TOP || y >= SS_FLOOR_TOP + SS_FLOOR_LINES) return -1;
+  int b = (hscroll >> 8) & 1;
+  if (!ss_have[b]) return -1;
+  int k = x < 0 ? -x - 1 : x - vdp.width;
+  if (k >= ASIC_SIDE_MAX) return -1;
+  return ss_side[b][y - SS_FLOOR_TOP][x < 0 ? 0 : 1][k];
+}
+
+static void ss_frame(void) {
+  if (!ss_on) { ss_on = true; ss_have[0] = ss_have[1] = false; }
+  // the sea under the floor (plane B rows 16-27, a pattern repeating every 2 columns) is only filled in
+  // for the 256 pixels: carry it on across the plane
+  if ((vdp.reg[16] & 3) == 1) {
+    u32 nt = (vdp.reg[4] & 7) << 13;
+    for (int row = 16; row < 28; row++)
+      for (int col = 32; col < 64; col++) {
+        u32 src = nt + (row * 64 + col - 32) * 2, dst = nt + (row * 64 + col) * 2;
+        vdp.vram[dst] = vdp.vram[src]; vdp.vram[dst + 1] = vdp.vram[src + 1];
+      }
+  }
+  asic_side = WIDE_EXTRA_H32 / 2 + 6;
+  vdp_vram_dma = ss_dma; vdp_plane_ext = ss_ext;
+  vdp_exl = vdp_exr = WIDE_EXTRA_H32 / 2;
+}
+
 void wide_frame(void) {
   vdp_exl = vdp_exr = 0;
   track_program();
+  if (enabled && program_is("SPMM__.MMD")) {
+    if (vdp.width == 256) { ss_frame(); return; }
+  } else if (ss_on) { ss_on = false; asic_side = 0; vdp_vram_dma = NULL; vdp_plane_ext = NULL; }
   if (enabled && vdp.width == 256 && program_is("TITLEM.MMD")) { title_frame(); return; }
   if (!patched || !drawn || vdp.width != 320) return;
   edges(ram16(0xff1926), &vdp_exl, &vdp_exr);   // the camera the VBlank before this frame drew with

@@ -27,6 +27,10 @@ typedef struct {
 
 extern Vdp vdp;
 extern int vdp_exl, vdp_exr;    // widescreen: pixels drawn past the left and right of the screen this frame
+// widescreen hooks (wide.c): a 68k-to-VRAM copy starts; a plane A pixel past the screen's sides
+// (its colour 0-15, or -1 for the plane's own)
+extern void (*vdp_vram_dma)(u32 vram_addr, u32 src, u32 words);
+extern int (*vdp_plane_ext)(int line, int x, int hscroll, int y);
 
 void vdp_reset(void);
 u16 vdp_read16(u32 a);
