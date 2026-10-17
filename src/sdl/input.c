@@ -1,22 +1,22 @@
 #include "../app.h"
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
-static bool keys[256];
+// Keyboard and gamepads through SDL3 (positional buttons: south/east/west/north, whatever the brand).
+// A key or button pressed and let go between two polls still counts as down for one poll.
+static bool keys[256], key_tap[256], key_tap_now[256];
 static int last_key, last_pad = -1;
-static u32 pad_prev, pad_state;
+static u32 pad_prev, pad_state, pad_tap, pad_tap_now;
 #define MAXPAD 8
-static SDL_GameController *pads[MAXPAD]; static int npads;
+static SDL_Gamepad *pads[MAXPAD]; static int npads;
 
-int sdl_vk(const SDL_Keysym *k) {
-  SDL_Keycode s = k->sym;
-  if (s >= 'a' && s <= 'z') return s - 'a' + 'A';
-  if (s >= '0' && s <= '9') return s;
+int sdl_vk(SDL_Keycode s, SDL_Scancode c) {
+  if (s >= 'a' && s <= 'z') return (int)(s - 'a' + 'A');
+  if (s >= '0' && s <= '9') return (int)s;
   switch (s) {
   case ';': return VK_OEM_1; case '=': return VK_OEM_PLUS; case ',': return VK_OEM_COMMA; case '-': return VK_OEM_MINUS;
   case '.': return VK_OEM_PERIOD; case '/': return VK_OEM_2; case '`': return VK_OEM_3; case '[': return VK_OEM_4;
   case '\\': return VK_OEM_5; case ']': return VK_OEM_6; case '\'': return VK_OEM_7;
   }
-  SDL_Scancode c = k->scancode;
   if (c >= SDL_SCANCODE_F1 && c <= SDL_SCANCODE_F12) return VK_F1 + (c - SDL_SCANCODE_F1);
   if (c >= SDL_SCANCODE_F13 && c <= SDL_SCANCODE_F24) return VK_F13 + (c - SDL_SCANCODE_F13);
   if (c >= SDL_SCANCODE_KP_1 && c <= SDL_SCANCODE_KP_9) return VK_NUMPAD0 + 1 + (c - SDL_SCANCODE_KP_1);
@@ -41,62 +41,69 @@ int sdl_vk(const SDL_Keysym *k) {
   }
 }
 
-static const char *pad_name(SDL_GameController *c) { const char *n = SDL_GameControllerName(c); return n ? n : "Gamepad"; }
-static SDL_JoystickID pad_id(SDL_GameController *c) { return SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(c)); }
+static const struct { SDL_GamepadButton b; int pb; } button_map[] = {
+  { SDL_GAMEPAD_BUTTON_SOUTH, PB_SOUTH }, { SDL_GAMEPAD_BUTTON_EAST, PB_EAST }, { SDL_GAMEPAD_BUTTON_WEST, PB_WEST },
+  { SDL_GAMEPAD_BUTTON_NORTH, PB_NORTH }, { SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, PB_L1 }, { SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PB_R1 },
+  { SDL_GAMEPAD_BUTTON_BACK, PB_SELECT }, { SDL_GAMEPAD_BUTTON_START, PB_START }, { SDL_GAMEPAD_BUTTON_LEFT_STICK, PB_L3 },
+  { SDL_GAMEPAD_BUTTON_RIGHT_STICK, PB_R3 }, { SDL_GAMEPAD_BUTTON_GUIDE, PB_HOME }, { SDL_GAMEPAD_BUTTON_DPAD_UP, PB_DUP },
+  { SDL_GAMEPAD_BUTTON_DPAD_DOWN, PB_DDOWN }, { SDL_GAMEPAD_BUTTON_DPAD_LEFT, PB_DLEFT }, { SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PB_DRIGHT } };
 
-void input_init(void) { SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER); }
+static const char *pad_name(SDL_Gamepad *c) { const char *n = SDL_GetGamepadName(c); return n ? n : "Gamepad"; }
+
+void input_init(void) { SDL_InitSubSystem(SDL_INIT_GAMEPAD); }
 
 void input_event(const SDL_Event *e) {
   switch (e->type) {
-  case SDL_KEYDOWN: case SDL_KEYUP: {
-    int vk = sdl_vk(&e->key.keysym);
+  case SDL_EVENT_KEY_DOWN: case SDL_EVENT_KEY_UP: {
+    int vk = sdl_vk(e->key.key, e->key.scancode);
     if (vk <= 0 || vk > 255) break;
-    if (e->type == SDL_KEYUP) keys[vk] = false;
-    else { if (!keys[vk] && !e->key.repeat) last_key = vk; keys[vk] = true; }
+    if (e->type == SDL_EVENT_KEY_UP) keys[vk] = false;
+    else { if (!keys[vk] && !e->key.repeat) { last_key = vk; key_tap[vk] = true; } keys[vk] = true; }
     break;
   }
-  case SDL_WINDOWEVENT:
-    if (e->window.event == SDL_WINDOWEVENT_FOCUS_LOST) memset(keys, 0, sizeof keys);
+  case SDL_EVENT_WINDOW_FOCUS_LOST:
+    memset(keys, 0, sizeof keys);
     break;
-  case SDL_CONTROLLERDEVICEADDED: {
-    SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(e->cdevice.which);
-    for (int i = 0; i < npads; i++) if (pad_id(pads[i]) == id) return;
+  case SDL_EVENT_GAMEPAD_ADDED: {
+    SDL_JoystickID id = e->gdevice.which;
+    for (int i = 0; i < npads; i++) if (SDL_GetGamepadID(pads[i]) == id) return;
     if (npads == MAXPAD) break;
-    SDL_GameController *c = SDL_GameControllerOpen(e->cdevice.which);
+    SDL_Gamepad *c = SDL_OpenGamepad(id);
     if (!c) break;
     pads[npads++] = c;
     osd_message("Controller connected: %s", pad_name(c));
     break;
   }
-  case SDL_CONTROLLERDEVICEREMOVED:
+  case SDL_EVENT_GAMEPAD_REMOVED:
     for (int i = 0; i < npads; i++)
-      if (pad_id(pads[i]) == e->cdevice.which) {
+      if (SDL_GetGamepadID(pads[i]) == e->gdevice.which) {
         osd_message("Controller disconnected: %s", pad_name(pads[i]));
-        SDL_GameControllerClose(pads[i]); pads[i] = pads[--npads]; break;
+        SDL_CloseGamepad(pads[i]); pads[i] = pads[--npads]; break;
       }
+    break;
+  case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    for (int k = 0; k < (int)(sizeof button_map / sizeof button_map[0]); k++)
+      if (button_map[k].b == e->gbutton.button) pad_tap |= 1u << button_map[k].pb;
     break;
   }
 }
 
 void input_poll(void) {
-  static const struct { SDL_GameControllerButton b; int pb; } map[] = {
-    { SDL_CONTROLLER_BUTTON_A, PB_SOUTH }, { SDL_CONTROLLER_BUTTON_B, PB_EAST }, { SDL_CONTROLLER_BUTTON_X, PB_WEST },
-    { SDL_CONTROLLER_BUTTON_Y, PB_NORTH }, { SDL_CONTROLLER_BUTTON_LEFTSHOULDER, PB_L1 }, { SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, PB_R1 },
-    { SDL_CONTROLLER_BUTTON_BACK, PB_SELECT }, { SDL_CONTROLLER_BUTTON_START, PB_START }, { SDL_CONTROLLER_BUTTON_LEFTSTICK, PB_L3 },
-    { SDL_CONTROLLER_BUTTON_RIGHTSTICK, PB_R3 }, { SDL_CONTROLLER_BUTTON_GUIDE, PB_HOME }, { SDL_CONTROLLER_BUTTON_DPAD_UP, PB_DUP },
-    { SDL_CONTROLLER_BUTTON_DPAD_DOWN, PB_DDOWN }, { SDL_CONTROLLER_BUTTON_DPAD_LEFT, PB_DLEFT }, { SDL_CONTROLLER_BUTTON_DPAD_RIGHT, PB_DRIGHT } };
   u32 st = 0;
   for (int i = 0; i < npads; i++) {
-    SDL_GameController *c = pads[i];
-    for (int k = 0; k < (int)(sizeof map / sizeof map[0]); k++) if (SDL_GameControllerGetButton(c, map[k].b)) st |= 1u << map[k].pb;
-    if (SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 12850) st |= 1u << PB_L2;
-    if (SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 12850) st |= 1u << PB_R2;
-    int x = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX), y = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY);
+    SDL_Gamepad *c = pads[i];
+    for (int k = 0; k < (int)(sizeof button_map / sizeof button_map[0]); k++) if (SDL_GetGamepadButton(c, button_map[k].b)) st |= 1u << button_map[k].pb;
+    if (SDL_GetGamepadAxis(c, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 12850) st |= 1u << PB_L2;
+    if (SDL_GetGamepadAxis(c, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 12850) st |= 1u << PB_R2;
+    int x = SDL_GetGamepadAxis(c, SDL_GAMEPAD_AXIS_LEFTX), y = SDL_GetGamepadAxis(c, SDL_GAMEPAD_AXIS_LEFTY);
     if (x < -16000) st |= 1u << PB_LS_LEFT;
     if (x > 16000) st |= 1u << PB_LS_RIGHT;
     if (y < -16000) st |= 1u << PB_LS_UP;
     if (y > 16000) st |= 1u << PB_LS_DOWN;
   }
+  // presses since the last poll count until the next one, even if already let go
+  pad_tap_now = pad_tap; pad_tap = 0;
+  memcpy(key_tap_now, key_tap, sizeof key_tap); memset(key_tap, 0, sizeof key_tap);
   pad_state = st;
   u32 now = input_pad_buttons();
   u32 pressed = now & ~pad_prev;
@@ -105,14 +112,14 @@ void input_poll(void) {
 }
 
 u32 input_pad_buttons(void) {
-  u32 st = pad_state;
+  u32 st = pad_state | pad_tap_now;
   if ((st & (1u << PB_SELECT)) && (st & (1u << PB_START))) st |= 1u << PB_HOME;
   return st;
 }
 
 int input_pad_count(void) { return npads; }
 const char *input_pad_name(int i) { return i < npads ? pad_name(pads[i]) : ""; }
-bool input_key(int vk) { return vk > 0 && vk < 256 && keys[vk]; }
+bool input_key(int vk) { return vk > 0 && vk < 256 && (keys[vk] || key_tap_now[vk]); }
 int input_last_key_pressed(void) { int k = last_key; last_key = 0; return k; }
 int input_last_pad_pressed(void) { int b = last_pad; last_pad = -1; return b; }
 void input_flush_edges(void) { last_key = 0; last_pad = -1; }

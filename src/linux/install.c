@@ -1,5 +1,5 @@
 #include "../gfx.h"
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include <errno.h>
 #include <limits.h>
 #include <spawn.h>
@@ -23,8 +23,8 @@ static bool only_uninstall;
 static const char *err;
 
 void sdl_icon(SDL_Window *w) {
-  SDL_Surface *s = SDL_CreateRGBSurfaceWithFormatFrom((void *)icon_rgba, icon_size, icon_size, 32, icon_size * 4, SDL_PIXELFORMAT_RGBA32);
-  if (s) { SDL_SetWindowIcon(w, s); SDL_FreeSurface(s); }
+  SDL_Surface *s = SDL_CreateSurfaceFrom(icon_size, icon_size, SDL_PIXELFORMAT_RGBA32, (void *)icon_rgba, icon_size * 4);
+  if (s) { SDL_SetWindowIcon(w, s); SDL_DestroySurface(s); }
 }
 
 static bool have(const char *prog) {
@@ -294,6 +294,7 @@ static bool installer(void) {
 }
 
 bool plat_home(void) {
+  setenv("SDL_APP_ID", ID, 0);   // SDL3: the X11 class and the Wayland app id
   setenv("SDL_VIDEO_X11_WMCLASS", ID, 0);
   setenv("SDL_VIDEO_WAYLAND_WMCLASS", ID, 0);
   const char *h = getenv("HOME"), *x = getenv("XDG_DATA_HOME");

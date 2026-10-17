@@ -38,6 +38,13 @@ int main(void) {
   now += 1000000;                          // a pause: back to normal reads
   expect("after a pause, high", th(1), 0x40 | (0x3f & ~0x21));
   expect("after a pause, low", th(0), 0x33 & ~0x11);
+  // a tap let go before the game read the pad is still read once (both halves), then not again
+  io_six_button = false;
+  io_set_pad(0, 0); th(1); th(0);
+  io_set_pad(0, PAD_B); io_set_pad(0, 0);
+  expect("tap, read high", th(1), 0x40 | (0x3f & ~0x10));   // B
+  expect("tap, read low", th(0), 0x33);
+  expect("tap, read again", th(1), 0x7f);
   printf(fails ? "%d failures\n" : "pad protocols ok\n", fails);
   return fails != 0;
 }

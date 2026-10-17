@@ -54,6 +54,24 @@ jobs:
         with:
           path: build/rc
           key: rc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('asm/**', 'tools/asm.py', 'tools/isa68k.py', 'tools/recomp.py', 'tools/recomp_gen.py', 'tools/opmap.c', 'tools/wide_gen.py', 'src/wide.h', 'src/m68k.c', 'src/m68k.h', 'src/m68k_ops.h', 'src/recomp.h', 'src/mcd.h', 'src/types.h') }}
+      - id: sdl-cache
+        uses: actions/cache@v4
+        with:
+          path: build/sdl
+          key: sdl-windows-3.4.16-mt
+      - name: sdl
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          curl -fsSL -o sdl.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz"
+          echo "7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68  sdl.tar.gz" | sha256sum -c
+          tar xzf sdl.tar.gz
+          # static, with the static C runtime the game uses (cl's default /MT)
+          cmake -S SDL3-3.4.16 -B build/sdlbuild -A x64 -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded \
+            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX="$PWD/build/sdl"
+          cmake --build build/sdlbuild --config Release -j 4
+          cmake --install build/sdlbuild --config Release
+          ls build/sdl/lib
       - uses: ilammy/msvc-dev-cmd@v1
       - name: build
         shell: cmd
@@ -100,7 +118,7 @@ jobs:
   macos:
     runs-on: macos-14
     env:
-      SDL_VERSION: 2.30.11
+      SDL_VERSION: 3.4.16
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -114,11 +132,12 @@ jobs:
       - name: sdl
         if: steps.sdl-cache.outputs.cache-hit != 'true'
         run: |
-          curl -fsSL -o sdl.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/SDL2-$SDL_VERSION.tar.gz"
-          echo "8b8d4aef2038533da814965220f88f77d60dfa0f32685f80ead65e501337da7f  sdl.tar.gz" | shasum -a 256 -c
+          curl -fsSL -o sdl.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/SDL3-$SDL_VERSION.tar.gz"
+          echo "7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68  sdl.tar.gz" | shasum -a 256 -c
           tar xzf sdl.tar.gz
-          cmake -S "SDL2-$SDL_VERSION" -B build/sdlbuild -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF -DCMAKE_INSTALL_PREFIX="$PWD/build/sdl"
+          cmake -S "SDL3-$SDL_VERSION" -B build/sdlbuild -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF \
+            -DCMAKE_INSTALL_PREFIX="$PWD/build/sdl"
           cmake --build build/sdlbuild -j 4
           cmake --install build/sdlbuild
       - id: ffmpeg-cache
@@ -218,7 +237,7 @@ jobs:
             runtime: 00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
     runs-on: ${{ matrix.os }}
     env:
-      SDL_VERSION: 2.30.11
+      SDL_VERSION: 3.4.16
       FT_VERSION: 2.13.3
     steps:
       - uses: actions/checkout@v4
@@ -228,7 +247,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends build-essential cmake pkg-config python3 file \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxxf86vm-dev libxinerama-dev \
             libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev \
-            libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev \
+            libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev libxtst-dev \
             fonts-dejavu-core fonts-dejavu-extra xvfb xdotool imagemagick desktop-file-utils libgl1-mesa-dri nasm
       - id: deps-cache
         uses: actions/cache@v4
@@ -240,18 +259,18 @@ jobs:
       - name: sdl and freetype
         if: steps.deps-cache.outputs.cache-hit != 'true'
         run: |
-          curl -fsSL -o sdl.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/SDL2-$SDL_VERSION.tar.gz"
-          echo "8b8d4aef2038533da814965220f88f77d60dfa0f32685f80ead65e501337da7f  sdl.tar.gz" | sha256sum -c
+          curl -fsSL -o sdl.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/SDL3-$SDL_VERSION.tar.gz"
+          echo "7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68  sdl.tar.gz" | sha256sum -c
           tar xzf sdl.tar.gz
-          cmake -S "SDL2-$SDL_VERSION" -B build/sdlbuild -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_STATIC_PIC=ON -DSDL_TEST=OFF -DSDL_KMSDRM=OFF \
+          cmake -S "SDL3-$SDL_VERSION" -B build/sdlbuild -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_KMSDRM=OFF \
             -DSDL_X11=ON -DSDL_X11_SHARED=ON -DSDL_WAYLAND=ON -DSDL_WAYLAND_SHARED=ON -DSDL_WAYLAND_LIBDECOR=ON -DSDL_WAYLAND_LIBDECOR_SHARED=ON \
             -DSDL_ALSA=ON -DSDL_ALSA_SHARED=ON -DSDL_PULSEAUDIO=ON -DSDL_PULSEAUDIO_SHARED=ON -DSDL_PIPEWIRE=ON -DSDL_PIPEWIRE_SHARED=ON \
             -DCMAKE_INSTALL_PREFIX="$PWD/build/sdl"
           cmake --build build/sdlbuild -j "$(nproc)"
           cmake --install build/sdlbuild
           mkdir -p build/sdl/licenses
-          cp "SDL2-$SDL_VERSION/LICENSE.txt" build/sdl/licenses/SDL2.txt
+          cp "SDL3-$SDL_VERSION/LICENSE.txt" build/sdl/licenses/SDL3.txt
           curl -fsSL -o ft.tar.xz "https://download.savannah.gnu.org/releases/freetype/freetype-$FT_VERSION.tar.xz" ||
             curl -fsSL -o ft.tar.xz "https://downloads.sourceforge.net/project/freetype/freetype2/$FT_VERSION/freetype-$FT_VERSION.tar.xz"
           sha256sum ft.tar.xz

@@ -1,8 +1,11 @@
 #!/bin/sh
 set -e
 cd "$(dirname "$0")"
-SDLCFG="${SDLCFG:-$PWD/build/sdl/bin/sdl2-config}"
-[ -x "$SDLCFG" ] || SDLCFG=sdl2-config
+# SDL3: build/sdl (static, as CI builds it) or the system's
+SDLPC="$PWD/build/sdl/lib/pkgconfig"
+[ -f "$SDLPC/sdl3.pc" ] && export PKG_CONFIG_PATH="$SDLPC${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+SDL_CFLAGS="$(pkg-config --cflags sdl3)"
+SDL_LIBS="$(pkg-config --static --libs sdl3)"
 CC="${CC:-gcc}"
 CXX="${CXX:-g++}"
 # FFmpeg for the remastered opening: build/ffmpeg (tools/build_ffmpeg.sh, bundled) or the system's headers
@@ -13,7 +16,7 @@ elif pkg-config --exists libavformat libavcodec libavutil libswresample 2>/dev/n
   MOVIE="-DLP_MOVIE $(pkg-config --cflags libavformat libavcodec libavutil libswresample)"
 fi
 CHD="-Ithird_party/libchdr/include -Ithird_party/libchdr/deps/lzma-26.02/include -Ithird_party/libchdr/deps/miniz-3.1.2 -Ithird_party/libchdr/deps/zstd-1.5.7"
-CFLAGS="-O2 -Isrc $("$SDLCFG" --cflags) $CHD $MOVIE"
+CFLAGS="-O2 -Isrc $SDL_CFLAGS $CHD $MOVIE"
 CXXFLAGS="-O2 -std=c++14"
 OBJ=build/obj/linux
 APPDIR=build/AppDir
@@ -87,7 +90,7 @@ for f in "$RC"/*.c; do [ -f "$RC/obj/$(basename "$f" .c).o" ] || echo "$f"; done
   xargs -P "$(nproc)" -I{} sh -c 'o="$1/obj/$(basename "$2" .c).o"; $CC -O2 -Isrc -I"$1" -c "$2" -o "$o.tmp" && mv "$o.tmp" "$o"' sh "$RC" {}
 $CC $CFLAGS -DLP_RECOMP -c src/recomp.c -o "$OBJ/src_recomp.c.o"
 
-$CXX "$OBJ"/*.o "$RC"/obj/*.o $("$SDLCFG" --static-libs) -lGL -lm -ldl -lpthread -o build/littleplanet
+$CXX "$OBJ"/*.o "$RC"/obj/*.o $SDL_LIBS -lGL -lm -ldl -lpthread -o build/littleplanet
 
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/licenses/littleplanet"
 cp build/littleplanet "$APPDIR/usr/bin/littleplanet"

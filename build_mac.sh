@@ -1,15 +1,23 @@
 #!/bin/sh
 set -e
 cd "$(dirname "$0")"
-SDLCFG="${SDLCFG:-$PWD/build/sdl/bin/sdl2-config}"
-[ -x "$SDLCFG" ] || SDLCFG=sdl2-config
+# SDL3: build/sdl (static, universal, as CI builds it); without pkg-config, its .pc read directly
+SDLPC="$PWD/build/sdl/lib/pkgconfig"
+if command -v pkg-config >/dev/null; then
+  [ -f "$SDLPC/sdl3.pc" ] && export PKG_CONFIG_PATH="$SDLPC${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+  SDL_CFLAGS="$(pkg-config --cflags sdl3)"
+  SDL_LIBS="$(pkg-config --static --libs sdl3)"
+else
+  SDL_CFLAGS="-I$PWD/build/sdl/include"
+  SDL_LIBS="$PWD/build/sdl/lib/libSDL3.a $(sed -n 's/^Libs.private: *//p' "$SDLPC/sdl3.pc")"
+fi
 FLAGS="-O2 -mmacosx-version-min=11.0"
 for a in ${ARCHS:-arm64 x86_64}; do FLAGS="$FLAGS -arch $a"; done
 FF="${FF:-$PWD/build/ffmpeg}"
 MOVIE=""
 [ -d "$FF/include" ] && MOVIE="-DLP_MOVIE -I$FF/include"
 CHD="-Ithird_party/libchdr/include -Ithird_party/libchdr/deps/lzma-26.02/include -Ithird_party/libchdr/deps/miniz-3.1.2 -Ithird_party/libchdr/deps/zstd-1.5.7"
-CFLAGS="$FLAGS -Isrc $("$SDLCFG" --cflags) $CHD $MOVIE -DGL_SILENCE_DEPRECATION -Wno-deprecated-declarations -Wno-unused-label"
+CFLAGS="$FLAGS -Isrc $SDL_CFLAGS $CHD $MOVIE -DGL_SILENCE_DEPRECATION -Wno-deprecated-declarations -Wno-unused-label"
 CXXFLAGS="$FLAGS -std=c++14"
 OBJ=build/obj/mac
 APP="build/Little Planet.app"
@@ -34,7 +42,7 @@ for f in "$RC"/*.c; do [ -f "$RC/obj/$(basename "$f" .c).o" ] || echo "$f"; done
   xargs -P "$(sysctl -n hw.ncpu)" -I{} sh -c 'o="$1/obj/$(basename "$2" .c).o"; clang $FLAGS -Isrc -I"$1" -c "$2" -o "$o.tmp" && mv "$o.tmp" "$o"' sh "$RC" {}
 clang $CFLAGS -DLP_RECOMP -c src/recomp.c -o "$OBJ/src_recomp.c.o"
 
-clang++ $FLAGS "$OBJ"/*.o "$RC"/obj/*.o $("$SDLCFG" --static-libs) \
+clang++ $FLAGS "$OBJ"/*.o "$RC"/obj/*.o $SDL_LIBS \
   -framework Cocoa -framework OpenGL -framework CoreText -framework CoreGraphics -framework CoreServices -o build/littleplanet
 
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/littleplanet.iconset

@@ -3,10 +3,16 @@
 // A 6-button pad counts falling edges of TH (the select line the game toggles). After the third one it
 // reads all four directions low (how games recognise it), on the next high Mode/X/Y/Z, after the fourth
 // 1111. Without a TH change for about 1.5 ms it starts over, so 3-button games never see the extras.
+//
+// A button pressed is reported until the game has read it (both halves, TH high and low), even if it was
+// let go before: a tap between two reads would be lost otherwise. The special stages read the pad only
+// once every 3 or 4 frames (once per frame of their own), so quick taps of the jump button went missing.
 #include "io.h"
 #include "mcd.h"
 
 static u16 pads[2];
+static u16 unread[2];   // pressed since the game last read both halves
+static u8 halves[2];    // which halves it read since: 1 TH high, 2 TH low
 bool io_six_button;
 #define PAD_TIMEOUT 80000   // MCLK, ~1.5 ms
 
@@ -14,6 +20,7 @@ void io_init(void) {
   memset(mcd.io_data, 0, sizeof mcd.io_data);
   memset(mcd.io_ctrl, 0, sizeof mcd.io_ctrl);
   pads[0] = pads[1] = 0;
+  unread[0] = unread[1] = 0; halves[0] = halves[1] = 0;
   memset(mcd.pad_th, 1, sizeof mcd.pad_th);
   memset(mcd.pad_lows, 0, sizeof mcd.pad_lows);
   memset(mcd.pad_th_time, 0, sizeof mcd.pad_th_time);
@@ -32,12 +39,18 @@ static void th_update(int port) {
   mcd.pad_th_time[port] = now;
 }
 
-void io_set_pad(int port, u16 b) { if (port < 2) pads[port] = b; }
+void io_set_pad(int port, u16 b) {
+  if (port >= 2) return;
+  u16 pressed = b & ~pads[port];
+  if (pressed) { unread[port] |= pressed; halves[port] = 0; }
+  pads[port] = b;
+}
 
 static u8 pad_read(int port) {
   u8 ctrl = mcd.io_ctrl[port], out = mcd.io_data[port];
-  u16 b = port < 2 ? pads[port] : 0;
+  u16 b = port < 2 ? pads[port] | unread[port] : 0;
   bool th = th_level(port);   // TH pulled high when it's an input
+  if (port < 2 && unread[port] && (halves[port] |= th ? 1 : 2) == 3) unread[port] = 0;
   int lows = 0;
   if (io_six_button && port < 2) {
     if (mcd_now() - mcd.pad_th_time[port] > PAD_TIMEOUT) mcd.pad_lows[port] = 0;

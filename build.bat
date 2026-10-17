@@ -26,7 +26,7 @@ set RC=%RC:/=\%
 if not exist %RC%\obj mkdir %RC%\obj
 if not exist %RC%\obj\rc_tables.obj cl /nologo /O2 /MP /w /bigobj /D_CRT_SECURE_NO_WARNINGS /Isrc /I%RC% /c %RC%\*.c /Fo%RC%\obj\ || exit /b 1
 rc /nologo /I. /fobuild\obj\game.res res\game.rc || exit /b 1
-cl /nologo /O2 /W3 /MP /wd4244 /wd4996 /wd4146 /wd4102 /wd4267 /wd4305 /wd4018 /D_CRT_SECURE_NO_WARNINGS /Isrc %CHD% %MOVIE% /DLP_RECOMP /EHsc /Fobuild\obj\ /Febuild\lp.exe src\*.c src\fm.cpp third_party\chd.c third_party\ymfm\ymfm_opn.cpp third_party\ymfm\ymfm_ssg.cpp third_party\ymfm\ymfm_adpcm.cpp build\gen\*.c %RC%\obj\*.obj build\obj\game.res %* /link /subsystem:windows /entry:mainCRTStartup /MANIFEST:NO || exit /b 1
+cl /nologo /O2 /W3 /MP /wd4244 /wd4996 /wd4146 /wd4102 /wd4267 /wd4305 /wd4018 /D_CRT_SECURE_NO_WARNINGS /Isrc /Ibuild\sdl\include %CHD% %MOVIE% /DLP_RECOMP /EHsc /Fobuild\obj\ /Febuild\lp.exe src\*.c src\fm.cpp third_party\chd.c third_party\ymfm\ymfm_opn.cpp third_party\ymfm\ymfm_ssg.cpp third_party\ymfm\ymfm_adpcm.cpp build\gen\*.c %RC%\obj\*.obj build\obj\game.res build\sdl\lib\SDL3-static.lib %* /link /subsystem:windows /entry:mainCRTStartup /MANIFEST:NO || exit /b 1
 if not exist build\obj\uninst mkdir build\obj\uninst
 rc /nologo /I. /fobuild\obj\uninst.res installer\uninst.rc || exit /b 1
 cl /nologo /O2 /W3 /wd4996 /D_CRT_SECURE_NO_WARNINGS /Isrc /Fobuild\obj\uninst\ /Febuild\uninst.exe installer\littleplanet.c src\gfx.c src\vg.c build\gen\ui_fonts.c build\obj\uninst.res /link /subsystem:windows /MANIFEST:NO || exit /b 1

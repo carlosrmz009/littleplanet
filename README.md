@@ -130,9 +130,9 @@ Remap anything under *Controls*. Xbox pads, DualShock 4 / DualSense, Switch Pro 
 
 ## Build
 
-**Windows:** Python 3.10+, Visual Studio 2022 Build Tools (MSVC x64).
-**macOS:** Python 3, Xcode command line tools, SDL2.
-**Linux:** Python 3, gcc/g++, SDL2. Packaging the AppImage also needs `appimagetool`.
+**Windows:** Python 3.10+, Visual Studio 2022 Build Tools (MSVC x64), a static SDL3 in `build\sdl` (gamepads; CI builds it).
+**macOS:** Python 3, Xcode command line tools, SDL3 (in `build/sdl`, as CI builds it, or the system's).
+**Linux:** Python 3, gcc/g++, SDL3 (in `build/sdl` or the system's, through pkg-config). Packaging the AppImage also needs `appimagetool`.
 
 For the remastered opening, build FFmpeg once with `tools/build_ffmpeg.sh build/ffmpeg` (needs nasm; on Windows run it
 from an MSYS2 MINGW64 shell) and fetch the video with `tools/fetch_intro.sh`. The build scripts pick both up from
@@ -251,7 +251,7 @@ tools/               disctool, disassembler/assembler, recompiler, widescreen pa
 * Sega and Sonic Team for Sonic CD.
 * [ymfm](https://github.com/aaronsgiles/ymfm), [libchdr](https://github.com/rtissera/libchdr),
   [dr_libs](https://github.com/mackron/dr_libs), [stb](https://github.com/nothings/stb),
-  [SDL2](https://www.libsdl.org/).
+  [SDL3](https://www.libsdl.org/).
 * [Archivo](https://github.com/Omnibus-Type/Archivo) and [Dela Gothic One](https://github.com/syakuzen/DelaGothic)
   (SIL Open Font License), the launcher's type.
 * [SingleStepTests](https://github.com/SingleStepTests) for the CPU test suites.
