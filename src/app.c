@@ -349,6 +349,7 @@ int app_run(const char *disc) {
   if (!plat_open()) { plat_error("OpenGL initialisation failed."); return 1; }
   if (cfg.fullscreen) { cfg.fullscreen = 0; set_fullscreen(true); }
   snd = snd_open();
+  double snd_tried = plat_time();   // no sound device: tried again every few seconds (one may turn up)
   ui_init();
 
   pv_alloc();
@@ -374,6 +375,13 @@ int app_run(const char *disc) {
   while (!app_quit) {
     plat_events();
     input_poll();
+    if (!snd && plat_time() - snd_tried > 5) {
+      static bool told;
+      snd_tried = plat_time();
+      snd = snd_open();
+      if (snd) { audio_drain(); if (told) osd_message("Sound found"); }
+      else if (!told && !uitest_prefix && !apptest_prefix) { osd_message("No sound device"); told = true; }
+    }
     if (!ui_was_ready && preview_ready) {
       const u32 *a[2] = {pv[0], pv[1]};
       ui_set_preview_frames(a, pv_w, pvclip[0], PV_CLIP_FRAMES);

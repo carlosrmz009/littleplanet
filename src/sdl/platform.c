@@ -66,13 +66,31 @@ double plat_time(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); 
 void *plat_thread(int (*fn)(void *)) { return SDL_CreateThread(fn, "preview", NULL); }
 void plat_join(void *t) { SDL_WaitThread(t, NULL); }
 
-// sound: a stream the device pulls from; what's queued in it is what the frame pacing reads
-bool snd_open(void) {
+// sound: a stream the device pulls from; what's queued in it is what the frame pacing reads.
+// SDL picks a driver that has devices, but not necessarily one to play on (PipeWire with only inputs,
+// say, while PulseAudio does the playing): if the default device won't open, each driver is tried in turn.
+static bool open_with(const char *driver) {
+  SDL_SetHint(SDL_HINT_AUDIO_DRIVER, driver);
   if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) return false;
-  SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "1024");
   SDL_AudioSpec spec = { SDL_AUDIO_S16, 2, 48000 };
   stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
-  if (!stream) return false;
+  if (stream) return true;
+  SDL_QuitSubSystem(SDL_INIT_AUDIO);
+  return false;
+}
+bool snd_open(void) {
+  SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "1024");
+  char tried[256] = "";
+  bool ok = open_with(NULL);
+  if (!ok) snprintf(tried, sizeof tried, "%s", SDL_GetError());
+  for (int i = 0; !ok && i < SDL_GetNumAudioDrivers(); i++) {
+    const char *d = SDL_GetAudioDriver(i);
+    if (strcmp(d, "dummy") && strcmp(d, "disk")) ok = open_with(d);
+  }
+  SDL_ResetHint(SDL_HINT_AUDIO_DRIVER);
+  static bool told;   // (the app keeps trying: say it once)
+  if (!ok) { if (!told) fprintf(stderr, "no sound: %s\n", tried); told = true; return false; }
+  fprintf(stderr, "sound: %s, %s\n", SDL_GetCurrentAudioDriver(), SDL_GetAudioDeviceName(SDL_GetAudioStreamDevice(stream)));
   SDL_ResumeAudioStreamDevice(stream);
   return true;
 }
